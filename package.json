@@ -4,8 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "relay": "node dist/relay/server.js",
-    "planner": "node dist/planner/server.js"
+    "teamhub": "node dist/teamhub/server.js",
+    "agent": "node dist/agents/runner.js",
+    "migrate": "node dist/scripts/migrate-legacy-to-teamhub.js",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

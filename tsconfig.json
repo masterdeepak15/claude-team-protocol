@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["relay/**/*.ts", "planner/**/*.ts"]
+  "include": ["relay/**/*.ts", "planner/**/*.ts", "teamhub/**/*.ts", "agents/**/*.ts", "scripts/**/*.ts"]
 }

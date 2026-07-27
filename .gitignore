@@ -1,0 +1,18 @@
+node_modules/
+dist/
+
+# Runtime data files — not source, hold live team state
+teamhub/teamhub.db.sqlite
+teamhub/teamhub.db.sqlite-shm
+teamhub/teamhub.db.sqlite-wal
+relay/team-relay.db.json
+planner/planner.db.sqlite
+planner/planner.db.sqlite-shm
+planner/planner.db.sqlite-wal
+legacy/relay/team-relay.db.json
+legacy/planner/planner.db.sqlite
+legacy/planner/planner.db.sqlite-shm
+legacy/planner/planner.db.sqlite-wal
+
+# Agent runner session state
+.*-session-id
