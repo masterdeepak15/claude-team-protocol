@@ -80,3 +80,7 @@ See **`docs/migration.md`**.
   concern.
 - TeamHub is intentionally simple (no auth, no UI) — same trust model as
   before: one office LAN, not a multi-tenant service.
+
+## License
+
+MIT — see `LICENSE`.

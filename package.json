@@ -2,6 +2,7 @@
   "name": "claude-team-protocol",
   "version": "1.0.0",
   "type": "module",
+  "license": "MIT",
   "scripts": {
     "build": "tsc",
     "teamhub": "node dist/teamhub/server.js",
