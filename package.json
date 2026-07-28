@@ -1,8 +1,38 @@
 {
-  "name": "claude-team-protocol",
+  "name": "@masterdeepak15/teamhub-cli",
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "description": "TeamHub — a self-hosted, project-aware MCP server + CLI for running a multi-agent Claude Code team (Team Lead plans/assigns, Developers code), with skills, an optional headless agent runner, and one-command install/autostart.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "multi-agent",
+    "team",
+    "task-management",
+    "planner",
+    "cli"
+  ],
+  "homepage": "https://github.com/masterdeepak15/claude-team-protocol",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/masterdeepak15/claude-team-protocol.git"
+  },
+  "bin": {
+    "teamhub": "dist/cli/teamhub-cli.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "templates",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "teamhub": "node dist/teamhub/server.js",
