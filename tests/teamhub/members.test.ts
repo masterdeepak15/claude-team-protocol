@@ -45,4 +45,41 @@ describe("members module", () => {
     setMemberStatus("dev-z3", "blocked");
     expect(getMember("dev-z3")?.status).toBe("blocked");
   });
+
+  it("defaults mode to 'manual' when not specified", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, getMember } = await import("../../teamhub/members.js");
+    createProject("proj-members-f", "Members Project F", "PMF");
+    registerMember("dev-z4", "proj-members-f", "developer");
+    expect(getMember("dev-z4")?.mode).toBe("manual");
+  });
+
+  it("registerMember accepts an explicit mode", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, getMember } = await import("../../teamhub/members.js");
+    createProject("proj-members-g", "Members Project G", "PMG");
+    registerMember("dev-z5", "proj-members-g", "developer", "auto");
+    expect(getMember("dev-z5")?.mode).toBe("auto");
+  });
+
+  it("setMemberMode changes mode in between, without touching other fields", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, setMemberMode, getMember } = await import("../../teamhub/members.js");
+    createProject("proj-members-h", "Members Project H", "PMH");
+    registerMember("dev-z6", "proj-members-h", "developer", "manual");
+    setMemberMode("dev-z6", "auto");
+    const member = getMember("dev-z6");
+    expect(member?.mode).toBe("auto");
+    expect(member?.project_id).toBe("proj-members-h");
+    expect(member?.role).toBe("developer");
+  });
+
+  it("re-registering without a mode preserves the previously set mode", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, getMember } = await import("../../teamhub/members.js");
+    createProject("proj-members-i", "Members Project I", "PMI");
+    registerMember("dev-z7", "proj-members-i", "developer", "auto");
+    registerMember("dev-z7", "proj-members-i", "developer");
+    expect(getMember("dev-z7")?.mode).toBe("auto");
+  });
 });
