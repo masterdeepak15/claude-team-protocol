@@ -72,6 +72,10 @@ including:
 - Running unattended via `teamhub agent` (or `agents/runner.ts` from a repo
   checkout), if you want headless operation for a Developer, Tester, or
   the Lead
+- **The monitoring dashboard** — open `http://<teamhub-host>:8787/` in a
+  browser for a live view of every project's tasks, sprints, and team, plus
+  a Messages tab where any human can pick a team member and reply to them
+  directly
 
 Already have a project and want to bolt TeamHub onto it (rather than start
 fresh)? See **`docs/adopt-into-existing-project.md`** — no changes to your
@@ -99,10 +103,10 @@ See **`docs/migration.md`**.
   GitHub work, but can't message each other or see tasks until it's back —
   run it on a small always-on box instead of the Lead's own PC if that's a
   concern.
-- TeamHub is intentionally simple (no auth, no UI yet — a read-only
-  monitoring dashboard on the same port is on the roadmap, see
-  `docs/architecture.md`) — same trust model as before: one office LAN, not
-  a multi-tenant service.
+- TeamHub is intentionally simple (no auth) — same trust model as before:
+  one office LAN, not a multi-tenant service. The monitoring dashboard
+  (`http://<host>:8787/`) has no login for the same reason — see
+  `docs/architecture.md`.
 
 ## License
 

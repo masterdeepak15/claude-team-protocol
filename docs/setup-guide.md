@@ -101,6 +101,25 @@ If this times out or refuses to connect from another PC, it's a networking
 problem (firewall, wrong IP, wrong network profile) — see the troubleshooting
 notes at the bottom of this guide. If it works, TeamHub itself is fine.
 
+### Step 2b — Open the monitoring dashboard
+
+Once TeamHub is running, open `http://<teamhub-host-ip>:8787/` (same host
+and port as everything else) in any browser — no separate setup, no login.
+You get:
+
+- **Dashboard** — task-status counts, active sprint, full team roster.
+- **Board** — a Jira-like Kanban across backlog/todo/in_progress/in_review/done/blocked, updating live as tasks move.
+- **Sprints** — every sprint with its tasks.
+- **Team** — every registered member, their role/mode, and a "Message" button.
+- **Messages** — pick any member, see your full conversation history with
+  them (not just what's unread), and reply — choose which registered
+  handle to send as via the "Acting as" picker in the top bar.
+
+This is a convenience for humans, not a new access-control layer — same
+no-auth trust model as the rest of TeamHub. Anyone who can reach the port
+can open the dashboard and reply as any handle, same as they already could
+via `send_message`.
+
 ## Step 3 — Point every machine's `.mcp.json` at the TeamHub host
 
 On every machine (the one running TeamHub, and every developer PC):

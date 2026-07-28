@@ -143,13 +143,46 @@ from multiple agent processes. No Postgres, no second storage engine — see
 the design spec's "Non-goals" for why this was chosen over a repository
 abstraction.
 
-## Roadmap: a monitoring UI (not yet built)
+## Monitoring UI
 
-A web dashboard — projects, team roster with roles/modes, task/sprint
-status, live message feed — served from the **same port** as `/mcp` and
-`/health` (e.g. `GET /` or `GET /dashboard` on the existing Express app, no
-new process or port to open/firewall) is planned but not implemented yet.
-When built, it would be read-only against the same SQLite file the MCP
-tools already use — no new state, no auth added (same trust model as
-everything else here) — just a browsable view of what `list_projects` /
-`list_team` / `list_tasks` already expose through tool calls.
+`GET /` on the same Express app (same port as `/mcp` and `/health`, no new
+process or firewall rule) serves a browser dashboard — sidebar + topbar
+layout with five views:
+
+- **Dashboard** — task-status stat cards, active sprint, full team roster.
+- **Board** — a Jira-like Kanban across all six task statuses.
+- **Sprints** — every sprint with its tasks.
+- **Team** — member cards (role/mode badges), click through to message them.
+- **Messages** — pick a member, see the full conversation thread with them
+  (not just unread — see below), reply as whichever registered handle you
+  choose in the "Acting as" picker.
+
+**Architecture:**
+
+- `teamhub/api.ts` — plain REST/JSON endpoints (`GET /api/projects`,
+  `.../members`, `.../sprints`, `.../tasks`, `GET /api/tasks/:taskRef`,
+  `GET /api/projects/:id/messages`, `POST /api/messages`) that call the same
+  `teamhub/*.ts` functions the MCP tools use directly — no MCP round-trip
+  for same-process UI reads/writes, no second data model to keep in sync.
+- `messaging.listMessages(project_id, handle?)` — a **non-mutating** query
+  (unlike `check_inbox`, which acks-on-read) so the UI can show full
+  history, already-read messages included, without disturbing what a
+  developer's own `check_inbox` call would still see as unread.
+- `teamhub/events.ts` — a single in-process `EventEmitter`. Every mutation
+  in `projects.ts`/`members.ts`/`messaging.ts`/`sprints.ts`/`tasks.ts` calls
+  `emitChange(kind, project_id)` after writing. `GET /api/events` is a
+  Server-Sent Events stream subscribed to that bus (optionally filtered by
+  `?project_id=`) — the browser refetches on any change, giving live task
+  movement/message delivery without polling.
+- `teamhub/public/` — plain HTML/CSS/JS, no build step or frontend
+  framework (keeps the npm package's dependency footprint unchanged).
+  Served via `express.static()`; `scripts/copy-public-assets.mjs` copies it
+  into `dist/teamhub/public/` as a build step, since `tsc` only compiles
+  `.ts` files and won't touch static assets on its own.
+- **No auth, same as everything else here** — the "Acting as" picker in
+  Messages just lets you choose which registered handle a reply is sent
+  from; it's a convenience for a human at the dashboard, not an identity
+  system. Any dynamic value from the database (message text, task titles,
+  comments — fields an unauthenticated MCP caller could set) is escaped
+  before being inserted into the page, since XSS is otherwise possible in
+  this no-auth model.
