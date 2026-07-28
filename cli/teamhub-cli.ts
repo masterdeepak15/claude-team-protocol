@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import * as readline from "node:readline";
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
@@ -150,7 +150,7 @@ Commands:
       Set up TeamHub in the current directory / on this machine. With no
       flags, prompts interactively for each optional step. With any flag
       given, runs non-interactively using only the flags you passed.
-        --skills     copy team-lead/team-developer/project-planner into ./.claude/skills
+        --skills     copy team-lead/team-developer/tester/project-planner into ./.claude/skills
         --mcp        add a teamhub entry to ./.mcp.json
         --desktop    add a teamhub entry to Claude Desktop's config (via mcp-remote)
         --autostart  register TeamHub to start at login/boot (Task Scheduler / launchd / systemd)
@@ -166,6 +166,14 @@ Commands:
 
   logs [--lines <n>] [--follow]
       Print the TeamHub server's log output (default last 50 lines).
+
+  agent --role <master|developer|tester> --project <id> --handle <name> [--master-handle <name>] [--mode auto|manual] [--cycle <seconds>] [--watchdog-interval <seconds>]
+      Run a headless (unattended) Master, Developer, or Tester loop in the
+      CURRENT directory — no repo checkout needed. Uses this same directory
+      for its session-tracking file and for all the Read/Edit/Bash work the
+      loop does, so cd into the actual project you want it working on first.
+      Set TEAMHUB_URL if TeamHub runs on a different machine (used by
+      --mode auto's interrupt watchdog).
 
   uninstall-autostart
       Remove the auto-start registration created by \`install --autostart\`.
@@ -198,7 +206,7 @@ function desktopConfigPath(): string {
 }
 
 function copySkills(targetDir: string): string[] {
-  const skillNames = ["team-lead", "team-developer", "project-planner"];
+  const skillNames = ["team-lead", "team-developer", "tester", "project-planner"];
   const copied: string[] = [];
   for (const name of skillNames) {
     const src = join(PACKAGE_ROOT, "skills", name);
@@ -387,7 +395,7 @@ async function runInstall(flags: Flags): Promise<void> {
 
   const explicit = "skills" in flags || "mcp" in flags || "desktop" in flags || "autostart" in flags;
 
-  const wantSkills = explicit ? flags.skills === true : await promptYesNo("Install team-lead/team-developer/project-planner skills into ./.claude/skills?");
+  const wantSkills = explicit ? flags.skills === true : await promptYesNo("Install team-lead/team-developer/tester/project-planner skills into ./.claude/skills?");
   const wantMcp = explicit ? flags.mcp === true : await promptYesNo("Add a teamhub entry to ./.mcp.json?");
   const wantDesktop = explicit ? flags.desktop === true : await promptYesNo("Also wire up Claude Desktop (via mcp-remote)?");
   const wantAutostart = explicit ? flags.autostart === true : await promptYesNo("Start TeamHub automatically on login/startup?");
@@ -431,6 +439,12 @@ export async function main(argv: string[]): Promise<void> {
     case "uninstall-autostart":
       uninstallAutostart();
       break;
+    case "agent": {
+      const runnerPath = join(PACKAGE_ROOT, "dist", "agents", "runner.js");
+      const { main: runAgent } = await import(pathToFileURL(runnerPath).href);
+      await runAgent(rest);
+      break;
+    }
     case "help":
     case "--help":
     case undefined:

@@ -129,7 +129,7 @@ describe("buildSystemdUnit", () => {
 describe("helpText", () => {
   it("mentions every command", () => {
     const text = helpText();
-    for (const cmd of ["install", "start", "stop", "status", "logs", "help"]) {
+    for (const cmd of ["install", "start", "stop", "status", "logs", "agent", "help"]) {
       expect(text).toContain(cmd);
     }
   });
