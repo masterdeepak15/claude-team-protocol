@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
+import { emitChange } from "./events.js";
 
 export interface Project {
   id: string;
@@ -25,6 +26,7 @@ export function createProject(
     `INSERT INTO projects (id, name, key_prefix, repo_url, status, created_at)
      VALUES (?, ?, ?, ?, 'active', ?)`
   ).run(id, name, key_prefix, repo_url ?? null, now());
+  emitChange("project", id);
   return getProject(id)!;
 }
 

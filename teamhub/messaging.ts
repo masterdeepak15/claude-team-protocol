@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
 import { setMemberStatus, touchMember } from "./members.js";
+import { emitChange } from "./events.js";
 
 export interface Message {
   id: string;
@@ -25,6 +26,7 @@ function insertMessage(msg: Message): void {
     `INSERT INTO messages (id, project_id, from_handle, to_handle, type, text, task_ref, ts, read)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`
   ).run(msg.id, msg.project_id, msg.from_handle, msg.to_handle, msg.type, msg.text, msg.task_ref ?? null, msg.ts);
+  emitChange("message", msg.project_id);
 }
 
 function rowToMessage(row: any): Message {

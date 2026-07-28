@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
+import { emitChange } from "./events.js";
 
 export interface Sprint {
   id: number;
@@ -28,6 +29,7 @@ export function createSprint(
        VALUES (?, ?, ?, ?, 'active', ?)`
     )
     .run(project_id, name, start_date ?? null, end_date ?? null, now());
+  emitChange("sprint", project_id);
   return getSprint(info.lastInsertRowid as number)!;
 }
 

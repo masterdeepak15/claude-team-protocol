@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
 import { getProject } from "./projects.js";
+import { emitChange } from "./events.js";
 
 export type TaskStatus = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "blocked";
 
@@ -45,6 +46,7 @@ export function createTask(
     `INSERT INTO tasks (project_id, task_ref, sprint_id, title, description, status, priority, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 'backlog', ?, ?, ?)`
   ).run(project_id, task_ref, sprint_id ?? null, title, description ?? null, priority, ts, ts);
+  emitChange("task", project_id);
   return getTaskByRef(task_ref)!;
 }
 
@@ -84,6 +86,7 @@ export function updateTaskStatus(
   db.prepare(
     `UPDATE tasks SET status = ?, assignee_handle = COALESCE(?, assignee_handle), updated_at = ? WHERE task_ref = ?`
   ).run(status, assignee_handle ?? null, now(), task_ref);
+  emitChange("task", existing.project_id);
   return getTaskByRef(task_ref);
 }
 
@@ -95,6 +98,7 @@ export function assignTask(task_ref: string, assignee_handle: string): Task | un
     now(),
     task_ref
   );
+  emitChange("task", existing.project_id);
   return getTaskByRef(task_ref);
 }
 
@@ -102,6 +106,8 @@ export function addComment(task_ref: string, author_handle: string, text: string
   db.prepare(
     `INSERT INTO comments (task_ref, author_handle, text, created_at) VALUES (?, ?, ?, ?)`
   ).run(task_ref, author_handle, text, now());
+  const task = getTaskByRef(task_ref);
+  if (task) emitChange("task", task.project_id);
 }
 
 export function listComments(task_ref: string) {

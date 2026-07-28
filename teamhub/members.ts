@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
+import { emitChange } from "./events.js";
 
 export type Role = "master" | "developer" | "tester";
 
@@ -33,6 +34,7 @@ export function registerMember(
        last_seen = excluded.last_seen,
        mode = COALESCE(@mode, members.mode)`
   ).run({ handle, project_id, role, ts, mode: mode ?? null });
+  emitChange("member", project_id);
   return getMember(handle)!;
 }
 
@@ -56,6 +58,8 @@ export function setMemberStatus(handle: string, status: string): void {
     now(),
     handle
   );
+  const member = getMember(handle);
+  if (member) emitChange("member", member.project_id);
 }
 
 export function setMemberMode(handle: string, mode: "auto" | "manual"): void {
@@ -64,6 +68,8 @@ export function setMemberMode(handle: string, mode: "auto" | "manual"): void {
     now(),
     handle
   );
+  const member = getMember(handle);
+  if (member) emitChange("member", member.project_id);
 }
 
 export function registerTools(server: McpServer): void {
