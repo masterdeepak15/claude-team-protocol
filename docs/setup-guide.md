@@ -89,6 +89,42 @@ yourself" without the Lead being involved). See
    to advance a cycle. You'll see every registration, message, and status
    update live in each terminal.
 
+## Step 5b — (Optional) Connect from Claude Desktop instead of Claude Code
+
+Everything above assumes the Claude Code CLI (`claude`). If someone on the
+team prefers the Claude Desktop app, it can talk to the same TeamHub server
+— MCP servers aren't CLI-specific, so no changes on the TeamHub side are
+needed.
+
+1. Open Claude Desktop → **Settings → Developer → Edit Config** (or open
+   the config file directly):
+   - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+   - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Linux:** `~/.config/Claude/claude_desktop_config.json`
+2. Add the same `teamhub` entry used in `.mcp.json`:
+
+   ```json
+   {
+     "mcpServers": {
+       "teamhub": { "type": "http", "url": "http://192.168.1.20:8787/mcp" }
+     }
+   }
+   ```
+3. Restart Claude Desktop. Open a new chat — the `teamhub` tools
+   (`register`, `check_inbox`, `create_task`, etc.) now appear in that
+   chat's tool list, same as in Claude Code.
+
+**One real limitation:** Claude Desktop has no skills system, so
+`team-lead` / `team-developer` won't auto-load there. To get the same
+behavior, either paste the relevant `skills/*/SKILL.md` file's contents
+into the conversation once (it's plain Markdown instructions — Desktop
+follows them fine as pasted-in context), or just tell it directly what
+role it's playing, e.g.: *"You're the Team Lead for project bts-project,
+handle master-1. Register yourself, then check the backlog and assign
+ready work to registered developers."* Everything else in this guide
+(kicking off a project, assigning tasks, reporting status) works
+identically once that's set up — it's the same `teamhub` tools either way.
+
 ## Step 6 — (Optional) Run unattended with the headless runner
 
 For overnight or unattended operation instead of an interactive session:
