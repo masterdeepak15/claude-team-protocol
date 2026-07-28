@@ -1,0 +1,458 @@
+#!/usr/bin/env node
+import { execFileSync, spawn } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  openSync,
+  closeSync,
+  statSync,
+  readSync,
+  cpSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import * as readline from "node:readline";
+
+const __dirname_ = dirname(fileURLToPath(import.meta.url));
+// dist/cli/teamhub-cli.js -> package root (two levels up)
+const PACKAGE_ROOT = join(__dirname_, "..", "..");
+
+// ---------------------------------------------------------------------------
+// Pure / testable helpers
+// ---------------------------------------------------------------------------
+
+export function stateDir(): string {
+  return join(homedir(), ".teamhub");
+}
+
+export function pidFilePath(): string {
+  return join(stateDir(), "teamhub.pid");
+}
+
+export function logFilePath(): string {
+  return join(stateDir(), "teamhub.log");
+}
+
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function tailLines(content: string, n: number): string {
+  if (content === "") return "";
+  const lines = content.split("\n");
+  return lines.slice(Math.max(0, lines.length - n)).join("\n");
+}
+
+export function mergeMcpConfig(existing: any, teamhubUrl: string): any {
+  const base = existing && typeof existing === "object" ? existing : {};
+  const mcpServers = { ...(base.mcpServers ?? {}) };
+  mcpServers.teamhub = { type: "http", url: teamhubUrl };
+  return { ...base, mcpServers };
+}
+
+export function mergeDesktopMcpConfig(existing: any, teamhubUrl: string): any {
+  const base = existing && typeof existing === "object" ? existing : {};
+  const mcpServers = { ...(base.mcpServers ?? {}) };
+  mcpServers.teamhub = { command: "npx", args: ["-y", "mcp-remote", teamhubUrl] };
+  return { ...base, mcpServers };
+}
+
+const WINDOWS_TASK_NAME = "TeamHub";
+
+export function buildWindowsAutostartArgs(nodePath: string, serverPath: string): string[] {
+  return [
+    "/Create",
+    "/SC",
+    "ONLOGON",
+    "/TN",
+    WINDOWS_TASK_NAME,
+    "/TR",
+    `"${nodePath}" "${serverPath}"`,
+    "/RL",
+    "LIMITED",
+    "/F",
+  ];
+}
+
+export function buildWindowsAutostartRemoveArgs(): string[] {
+  return ["/Delete", "/TN", WINDOWS_TASK_NAME, "/F"];
+}
+
+export function buildLaunchdPlist(
+  nodePath: string,
+  serverPath: string,
+  logPath: string,
+  port: number,
+  dbPath: string | undefined
+): string {
+  const envEntries = [`<key>TEAMHUB_PORT</key><string>${port}</string>`];
+  if (dbPath) envEntries.push(`<key>TEAMHUB_DB</key><string>${dbPath}</string>`);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.teamhub.server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${nodePath}</string>
+    <string>${serverPath}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    ${envEntries.join("\n    ")}
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>${logPath}</string>
+  <key>StandardErrorPath</key><string>${logPath}</string>
+</dict>
+</plist>
+`;
+}
+
+export function buildSystemdUnit(
+  nodePath: string,
+  serverPath: string,
+  port: number,
+  dbPath: string | undefined
+): string {
+  const envLines = [`Environment=TEAMHUB_PORT=${port}`];
+  if (dbPath) envLines.push(`Environment=TEAMHUB_DB=${dbPath}`);
+  return `[Unit]
+Description=TeamHub MCP server
+
+[Service]
+ExecStart=${nodePath} ${serverPath}
+${envLines.join("\n")}
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+`;
+}
+
+export function helpText(): string {
+  return `teamhub — self-hosted TeamHub MCP server CLI
+
+Usage: teamhub <command> [options]
+
+Commands:
+  install [--skills] [--mcp] [--desktop] [--autostart] [--port <n>] [--db <path>] [--url <url>]
+      Set up TeamHub in the current directory / on this machine. With no
+      flags, prompts interactively for each optional step. With any flag
+      given, runs non-interactively using only the flags you passed.
+        --skills     copy team-lead/team-developer/project-planner into ./.claude/skills
+        --mcp        add a teamhub entry to ./.mcp.json
+        --desktop    add a teamhub entry to Claude Desktop's config (via mcp-remote)
+        --autostart  register TeamHub to start at login/boot (Task Scheduler / launchd / systemd)
+
+  start [--port <n>] [--db <path>]
+      Start the TeamHub server in the background.
+
+  stop
+      Stop the background TeamHub server.
+
+  status
+      Report whether TeamHub is currently running.
+
+  logs [--lines <n>] [--follow]
+      Print the TeamHub server's log output (default last 50 lines).
+
+  uninstall-autostart
+      Remove the auto-start registration created by \`install --autostart\`.
+
+  help, --help
+      Show this text.
+`;
+}
+
+// ---------------------------------------------------------------------------
+// Side-effecting commands
+// ---------------------------------------------------------------------------
+
+function readPid(): number | undefined {
+  if (!existsSync(pidFilePath())) return undefined;
+  const raw = readFileSync(pidFilePath(), "utf-8").trim();
+  const pid = Number(raw);
+  return Number.isFinite(pid) ? pid : undefined;
+}
+
+function desktopConfigPath(): string {
+  const home = homedir();
+  if (process.platform === "win32") {
+    return join(process.env.APPDATA || join(home, "AppData", "Roaming"), "Claude", "claude_desktop_config.json");
+  }
+  if (process.platform === "darwin") {
+    return join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
+  }
+  return join(home, ".config", "Claude", "claude_desktop_config.json");
+}
+
+function copySkills(targetDir: string): string[] {
+  const skillNames = ["team-lead", "team-developer", "project-planner"];
+  const copied: string[] = [];
+  for (const name of skillNames) {
+    const src = join(PACKAGE_ROOT, "skills", name);
+    const dest = join(targetDir, ".claude", "skills", name);
+    if (existsSync(src)) {
+      mkdirSync(dirname(dest), { recursive: true });
+      cpSync(src, dest, { recursive: true });
+      copied.push(name);
+    }
+  }
+  return copied;
+}
+
+function updateMcpJsonFile(targetDir: string, teamhubUrl: string): string {
+  const mcpPath = join(targetDir, ".mcp.json");
+  const existing = existsSync(mcpPath) ? JSON.parse(readFileSync(mcpPath, "utf-8")) : {};
+  writeFileSync(mcpPath, JSON.stringify(mergeMcpConfig(existing, teamhubUrl), null, 2) + "\n");
+  return mcpPath;
+}
+
+function updateDesktopConfigFile(teamhubUrl: string): string {
+  const path = desktopConfigPath();
+  mkdirSync(dirname(path), { recursive: true });
+  const existing = existsSync(path) ? JSON.parse(readFileSync(path, "utf-8")) : {};
+  writeFileSync(path, JSON.stringify(mergeDesktopMcpConfig(existing, teamhubUrl), null, 2) + "\n");
+  return path;
+}
+
+function installAutostart(port: number, dbPath: string | undefined): void {
+  const nodePath = process.execPath;
+  const serverPath = join(PACKAGE_ROOT, "dist", "teamhub", "server.js");
+  mkdirSync(stateDir(), { recursive: true });
+
+  if (process.platform === "win32") {
+    if (port !== 8787) execFileSync("setx", ["TEAMHUB_PORT", String(port)]);
+    if (dbPath) execFileSync("setx", ["TEAMHUB_DB", dbPath]);
+    execFileSync("schtasks", buildWindowsAutostartArgs(nodePath, serverPath));
+    console.log("Registered TeamHub to start at Windows logon (Task Scheduler).");
+  } else if (process.platform === "darwin") {
+    const plistPath = join(homedir(), "Library", "LaunchAgents", "com.teamhub.server.plist");
+    mkdirSync(dirname(plistPath), { recursive: true });
+    writeFileSync(plistPath, buildLaunchdPlist(nodePath, serverPath, logFilePath(), port, dbPath));
+    execFileSync("launchctl", ["load", "-w", plistPath]);
+    console.log("Registered TeamHub as a macOS LaunchAgent (starts at login).");
+  } else {
+    const unitPath = join(homedir(), ".config", "systemd", "user", "teamhub.service");
+    mkdirSync(dirname(unitPath), { recursive: true });
+    writeFileSync(unitPath, buildSystemdUnit(nodePath, serverPath, port, dbPath));
+    execFileSync("systemctl", ["--user", "daemon-reload"]);
+    execFileSync("systemctl", ["--user", "enable", "--now", "teamhub.service"]);
+    console.log("Registered TeamHub as a systemd --user service (starts at login).");
+  }
+}
+
+function uninstallAutostart(): void {
+  if (process.platform === "win32") {
+    try {
+      execFileSync("schtasks", buildWindowsAutostartRemoveArgs());
+    } catch {
+      // task may not exist — fine
+    }
+    console.log("Removed TeamHub's Windows scheduled task (if it existed).");
+  } else if (process.platform === "darwin") {
+    const plistPath = join(homedir(), "Library", "LaunchAgents", "com.teamhub.server.plist");
+    if (existsSync(plistPath)) {
+      try {
+        execFileSync("launchctl", ["unload", "-w", plistPath]);
+      } catch {
+        // ignore
+      }
+      rmSync(plistPath, { force: true });
+    }
+    console.log("Removed TeamHub's macOS LaunchAgent (if it existed).");
+  } else {
+    try {
+      execFileSync("systemctl", ["--user", "disable", "--now", "teamhub.service"]);
+    } catch {
+      // ignore
+    }
+    rmSync(join(homedir(), ".config", "systemd", "user", "teamhub.service"), { force: true });
+    console.log("Removed TeamHub's systemd --user service (if it existed).");
+  }
+}
+
+function startServer(port: number, dbPath: string | undefined): void {
+  const existingPid = readPid();
+  if (existingPid && isProcessAlive(existingPid)) {
+    console.log(`TeamHub is already running (pid ${existingPid}).`);
+    return;
+  }
+  mkdirSync(stateDir(), { recursive: true });
+  const logFd = openSync(logFilePath(), "a");
+  const serverPath = join(PACKAGE_ROOT, "dist", "teamhub", "server.js");
+  const child = spawn(process.execPath, [serverPath], {
+    detached: true,
+    stdio: ["ignore", logFd, logFd],
+    env: { ...process.env, TEAMHUB_PORT: String(port), ...(dbPath ? { TEAMHUB_DB: dbPath } : {}) },
+  });
+  closeSync(logFd);
+  writeFileSync(pidFilePath(), String(child.pid));
+  child.unref();
+  console.log(`TeamHub started in the background (pid ${child.pid}, port ${port}).`);
+  console.log(`Logs: teamhub logs   (file: ${logFilePath()})`);
+}
+
+function stopServer(): void {
+  const pid = readPid();
+  if (!pid || !isProcessAlive(pid)) {
+    console.log("TeamHub is not running.");
+    return;
+  }
+  if (process.platform === "win32") {
+    execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"]);
+  } else {
+    process.kill(pid, "SIGTERM");
+  }
+  rmSync(pidFilePath(), { force: true });
+  console.log("TeamHub stopped.");
+}
+
+function statusServer(): void {
+  const pid = readPid();
+  if (pid && isProcessAlive(pid)) {
+    console.log(`TeamHub is running (pid ${pid}).`);
+    console.log(`Log file: ${logFilePath()}`);
+  } else {
+    console.log("TeamHub is not running.");
+  }
+}
+
+function showLogs(lines: number, follow: boolean): void {
+  if (!existsSync(logFilePath())) {
+    console.log("No log file yet — TeamHub hasn't been started with `teamhub start`.");
+    return;
+  }
+  console.log(tailLines(readFileSync(logFilePath(), "utf-8"), lines));
+  if (follow) {
+    let lastSize = statSync(logFilePath()).size;
+    setInterval(() => {
+      const size = statSync(logFilePath()).size;
+      if (size > lastSize) {
+        const fd = openSync(logFilePath(), "r");
+        const buf = Buffer.alloc(size - lastSize);
+        readSync(fd, buf, 0, buf.length, lastSize);
+        closeSync(fd);
+        process.stdout.write(buf.toString("utf-8"));
+        lastSize = size;
+      }
+    }, 1000);
+  }
+}
+
+async function promptYesNo(question: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer: string = await new Promise((resolve) => rl.question(`${question} [y/N] `, resolve));
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+interface Flags {
+  [key: string]: string | boolean;
+}
+
+function parseFlags(rest: string[]): Flags {
+  const flags: Flags = {};
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (!arg.startsWith("--")) continue;
+    const key = arg.slice(2);
+    const next = rest[i + 1];
+    if (next !== undefined && !next.startsWith("--")) {
+      flags[key] = next;
+      i++;
+    } else {
+      flags[key] = true;
+    }
+  }
+  return flags;
+}
+
+async function runInstall(flags: Flags): Promise<void> {
+  const targetDir = process.cwd();
+  const port = Number(flags.port ?? 8787);
+  const teamhubUrl = typeof flags.url === "string" ? flags.url : `http://localhost:${port}/mcp`;
+  const dbPath = typeof flags.db === "string" ? flags.db : undefined;
+
+  const explicit = "skills" in flags || "mcp" in flags || "desktop" in flags || "autostart" in flags;
+
+  const wantSkills = explicit ? flags.skills === true : await promptYesNo("Install team-lead/team-developer/project-planner skills into ./.claude/skills?");
+  const wantMcp = explicit ? flags.mcp === true : await promptYesNo("Add a teamhub entry to ./.mcp.json?");
+  const wantDesktop = explicit ? flags.desktop === true : await promptYesNo("Also wire up Claude Desktop (via mcp-remote)?");
+  const wantAutostart = explicit ? flags.autostart === true : await promptYesNo("Start TeamHub automatically on login/startup?");
+
+  if (wantSkills) {
+    const copied = copySkills(targetDir);
+    console.log(`Installed skills: ${copied.join(", ") || "(none found in this package)"}`);
+  }
+  if (wantMcp) {
+    console.log(`Added teamhub to ${updateMcpJsonFile(targetDir, teamhubUrl)}`);
+  }
+  if (wantDesktop) {
+    console.log(`Added teamhub to Claude Desktop's config: ${updateDesktopConfigFile(teamhubUrl)}`);
+  }
+  if (wantAutostart) {
+    installAutostart(port, dbPath);
+  }
+  console.log("\nRun `teamhub start` to start the server now.");
+}
+
+export async function main(argv: string[]): Promise<void> {
+  const [command, ...rest] = argv;
+  const flags = parseFlags(rest);
+
+  switch (command) {
+    case "install":
+      await runInstall(flags);
+      break;
+    case "start":
+      startServer(Number(flags.port ?? 8787), typeof flags.db === "string" ? flags.db : undefined);
+      break;
+    case "stop":
+      stopServer();
+      break;
+    case "status":
+      statusServer();
+      break;
+    case "logs":
+      showLogs(Number(flags.lines ?? 50), flags.follow === true);
+      break;
+    case "uninstall-autostart":
+      uninstallAutostart();
+      break;
+    case "help":
+    case "--help":
+    case undefined:
+      console.log(helpText());
+      break;
+    default:
+      console.error(`Unknown command "${command}".\n`);
+      console.log(helpText());
+      process.exitCode = 1;
+  }
+}
+
+function isMain(): boolean {
+  if (!process.argv[1]) return false;
+  const invoked = process.argv[1].replace(/\\/g, "/");
+  const thisFile = new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+  return invoked.endsWith(thisFile) || thisFile.endsWith(invoked);
+}
+
+if (isMain()) {
+  main(process.argv.slice(2)).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
