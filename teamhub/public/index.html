@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>TeamHub</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="TeamHub — projects, sprints, tasks, and team communication in one place." />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="logo">TeamHub</span>
+      <button class="sidebar-close" id="sidebarClose" aria-label="Close menu">&times;</button>
+    </div>
+    <div class="project-picker">
+      <select id="projectSelect" aria-label="Select project"></select>
+    </div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="dashboard">Dashboard</button>
+      <button class="nav-item" data-view="board">Board</button>
+      <button class="nav-item" data-view="sprints">Sprints</button>
+      <button class="nav-item" data-view="team">Team</button>
+      <button class="nav-item" data-view="messages">Messages</button>
+    </nav>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button class="hamburger" id="hamburger" aria-label="Open menu">&#9776;</button>
+      <h1 id="viewTitle">Dashboard</h1>
+      <div class="topbar-right">
+        <span class="conn-dot" id="connDot" title="Live update connection status"></span>
+        <label class="identity">Acting as
+          <select id="identitySelect" aria-label="Acting as"></select>
+        </label>
+      </div>
+    </header>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

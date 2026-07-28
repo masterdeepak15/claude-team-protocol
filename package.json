@@ -26,16 +26,19 @@
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
+    "dist/**/*.html",
+    "dist/**/*.css",
     "skills",
     "templates",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CLI.md"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-public-assets.mjs",
     "teamhub": "node dist/teamhub/server.js",
     "agent": "node dist/agents/runner.js",
     "migrate": "node dist/scripts/migrate-legacy-to-teamhub.js",

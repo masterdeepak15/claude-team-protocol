@@ -2,11 +2,17 @@
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as projects from "./projects.js";
 import * as members from "./members.js";
 import * as messaging from "./messaging.js";
 import * as sprints from "./sprints.js";
 import * as tasks from "./tasks.js";
+import { buildApiRouter } from "./api.js";
+
+const __dirname_ = dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = join(__dirname_, "public");
 
 // The single MCP server every claude CLI session (Master + every Developer)
 // connects to over HTTP. Run this once, on one machine (e.g. PC1), then
@@ -41,6 +47,12 @@ export function buildHttpApp(): express.Express {
       uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
     });
   });
+
+  // Monitoring UI (dashboard/board/sprints/team/messages) and its REST/SSE
+  // API — same port as /mcp and /health, no separate process or firewall
+  // rule needed. See docs/architecture.md.
+  app.use("/api", buildApiRouter());
+  app.use(express.static(PUBLIC_DIR));
 
   app.post("/mcp", async (req, res) => {
     try {
@@ -77,5 +89,6 @@ if (isMain()) {
     console.log(`teamhub listening on http://0.0.0.0:${PORT}/mcp`);
     console.log(`Point other machines at http://<this-PC-LAN-IP>:${PORT}/mcp`);
     console.log(`Health check: http://<this-PC-LAN-IP>:${PORT}/health`);
+    console.log(`Dashboard: http://<this-PC-LAN-IP>:${PORT}/`);
   });
 }
