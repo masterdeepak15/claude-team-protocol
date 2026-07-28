@@ -207,17 +207,22 @@ describe("runInterruptibleCycle", () => {
   });
 
   it("keeps polling through transient pollInterrupt failures without throwing", async () => {
+    // Deterministic by construction: the result only resolves once pollInterrupt
+    // has been called at least 3 times, so there's no wall-clock race between
+    // the result timer and the watchdog's poll interval (which would make this
+    // test flaky under system load).
     const killSpy = vi.fn();
-    const spawn = () => ({
-      child: { kill: killSpy },
-      result: new Promise<{ stdout: string }>((resolve) =>
-        setTimeout(() => resolve({ stdout: JSON.stringify({ result: "ok" }) }), 25)
-      ),
+    let resolveResult!: (value: { stdout: string }) => void;
+    const resultPromise = new Promise<{ stdout: string }>((resolve) => {
+      resolveResult = resolve;
     });
+    const spawn = () => ({ child: { kill: killSpy }, result: resultPromise });
+
     let calls = 0;
     const pollInterrupt = vi.fn(async () => {
       calls++;
       if (calls === 1) throw new Error("network blip");
+      if (calls >= 3) resolveResult({ stdout: JSON.stringify({ result: "ok" }) });
       return undefined;
     });
 
@@ -232,7 +237,7 @@ describe("runInterruptibleCycle", () => {
     );
 
     expect(outcome).toEqual({ interrupted: false });
-    expect(calls).toBeGreaterThan(1);
+    expect(calls).toBeGreaterThanOrEqual(3);
     expect(killSpy).not.toHaveBeenCalled();
   });
 });

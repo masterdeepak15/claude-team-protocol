@@ -1,6 +1,6 @@
 {
   "name": "@masterdeepak15/teamhub-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "license": "MIT",
   "description": "TeamHub — a self-hosted, project-aware MCP server + CLI for running a multi-agent Claude Code team (Team Lead plans/assigns, Developers code), with skills, an optional headless agent runner, and one-command install/autostart.",
@@ -50,7 +50,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "^13.0.0",
     "express": "^5.2.1",
     "zod": "^4.4.3"
   }
