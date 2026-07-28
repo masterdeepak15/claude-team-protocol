@@ -55,6 +55,23 @@ https://github.com/masterdeepak15/Spyder/raw/main/dist/teamhub-team.plugin`)
 Whichever human is acting as Lead uses `team-lead` (or `project-planner`
 for just the initial setup); every Developer uses `team-developer`.
 
+## Part C.5 — Drop in a CLAUDE.md so every session knows the conventions
+
+Copy `templates/CLAUDE.md` from this repo into your existing project's root
+as `CLAUDE.md` (merge it in below anything already there). It tells every
+session working in your repo — Lead or Developer — to:
+
+- Use the `git` CLI directly for all version control (TeamHub only tracks
+  project/task/message state, never code or git history).
+- Prefer **Gortex MCP** tools over raw `Read`/`Grep`/`Glob` for code search
+  and navigation, if this repo happens to be Gortex-indexed — falling back
+  to normal file tools when it isn't.
+- Which skill to use for which role, and where the TeamHub tools are
+  documented.
+
+This is optional but saves you from re-explaining the same conventions in
+every new session.
+
 ## Part D — Register your existing backlog as a TeamHub project
 
 You almost certainly already have a mental (or written) backlog. Turn it

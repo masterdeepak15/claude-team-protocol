@@ -34,7 +34,11 @@ skills/
 scripts/
   migrate-legacy-to-teamhub.ts — one-time import from the old relay+planner setup
 docs/
-  architecture.md, setup-guide.md, skills-guide.md, migration.md
+  architecture.md, setup-guide.md, skills-guide.md, migration.md,
+  example-walkthrough.md, adopt-into-existing-project.md
+templates/
+  CLAUDE.md — drop-in session conventions for a project adopting TeamHub
+              (git CLI for version control, Gortex MCP when available, skills)
 legacy/
   the old relay/, planner/, and agents/*.sh from before this rewrite
 ```
