@@ -19,12 +19,25 @@ PC1: TeamHub host          PC2: Team Lead              PC3+: Developers
                           GitHub MCP (per machine, as usual)
 ```
 
+## Install
+
+```bash
+npm install -g @masterdeepak15/teamhub-cli
+teamhub install   # interactive: skills / .mcp.json / Claude Desktop / autostart
+teamhub start
+```
+
+See **`docs/setup-guide.md`**'s "Fastest path" section for the full CLI
+reference (`start`/`stop`/`status`/`logs`/`uninstall-autostart`/`--help`).
+
 ## What's in this project
 
 ```
 teamhub/
   db.ts, projects.ts, members.ts, messaging.ts, sprints.ts, tasks.ts, server.ts
     — the single MCP server (see docs/architecture.md)
+cli/
+  teamhub-cli.ts  — the `teamhub` command (install/start/stop/status/logs/autostart)
 agents/
   runner.ts       — cross-platform (Windows/Mac/Linux) headless agent loop
 skills/

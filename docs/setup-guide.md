@@ -4,6 +4,48 @@
 > **`docs/example-walkthrough.md`** — it walks through this entire guide
 > with a real project, real commands, and real conversation snippets.
 
+## Fastest path: install the CLI from npm
+
+If you don't need a repo checkout (contributing, migrating legacy data),
+this is the quickest way to get TeamHub running — no `git clone` needed:
+
+```bash
+npm install -g @masterdeepak15/teamhub-cli
+teamhub install
+```
+
+`teamhub install` with no flags prompts you interactively for each optional
+step — install the skills into `./.claude/skills`, add a `teamhub` entry to
+`./.mcp.json`, wire up Claude Desktop too, and/or register TeamHub to
+auto-start at login/boot. Answer `y`/`N` to whichever you want.
+
+For scripted/non-interactive setup, pass the flags you want directly (any
+flag switches to non-interactive mode — only what you pass happens):
+
+```bash
+teamhub install --skills --mcp --autostart --port 8787
+```
+
+Then:
+
+```bash
+teamhub start           # start the server in the background
+teamhub status          # is it running?
+teamhub logs            # see its output (--follow to tail continuously)
+teamhub stop            # stop it
+teamhub uninstall-autostart   # remove the auto-start registration
+teamhub --help           # full command reference
+```
+
+`--autostart` registers TeamHub with Windows Task Scheduler, a macOS
+LaunchAgent, or a Linux systemd `--user` service, matching your OS —
+verified end-to-end on Windows; the macOS/Linux paths use well-established
+patterns but haven't been run on those OSes in this project's testing yet.
+
+The rest of this guide (Steps 1–6) walks through the equivalent manual
+setup from a repo checkout — useful if you're contributing to TeamHub
+itself, or prefer not to install a global CLI.
+
 ## Step 1 — Install and build (on the machine that will run TeamHub)
 
 macOS/Linux and Windows both use the same commands:
