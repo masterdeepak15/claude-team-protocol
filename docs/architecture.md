@@ -110,6 +110,20 @@ row that shows up in that handle's next ordinary `check_inbox` call — there
 is no remote-kill capability, by design, whenever a human is (or might be)
 directly supervising that session.
 
+## HTTP surface
+
+`teamhub`'s Express app exposes two routes:
+
+- `POST /mcp` — the actual MCP protocol endpoint. A plain browser/`curl` GET
+  against it always 404s (`Cannot GET /mcp`) — that's expected, not an error;
+  it just means you used the wrong HTTP method, not that the server is down.
+- `GET /health` — a plain, unauthenticated status route (`{"status":"ok","service":"teamhub","uptimeSeconds":N}`),
+  deliberately separate from the MCP protocol so "is TeamHub reachable from
+  this machine" can be checked with a browser tab or plain `curl`, without
+  needing to speak MCP at all. See `docs/setup-guide.md`'s troubleshooting
+  section for how this fits into diagnosing cross-machine connectivity
+  issues (firewall vs. wrong IP vs. genuinely down).
+
 ## Storage
 
 Single SQLite file, WAL mode + `busy_timeout` pragma for concurrent access

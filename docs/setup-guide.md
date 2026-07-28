@@ -77,6 +77,25 @@ http://0.0.0.0:8787/mcp`. Find this PC's LAN IP with `ipconfig` (Windows) or
 `ifconfig`/`ip addr` (Mac/Linux). Open inbound TCP for port 8787 on this
 PC's firewall for your office network profile.
 
+### Verifying it's actually reachable from another PC
+
+TeamHub also exposes a plain `GET /health` endpoint, separate from the MCP
+protocol itself — open it directly in a browser, or:
+
+```bash
+curl http://192.168.1.20:8787/health
+```
+
+A working response looks like `{"status":"ok","service":"teamhub","uptimeSeconds":12}`.
+This is the easiest way to confirm the server is reachable from a *different*
+machine before wiring up `.mcp.json` — no MCP request formatting needed, and
+no confusing 404 (that only happens on `/mcp`, since it's a POST-only route;
+`/health` is GET, so a browser or plain `curl` works directly).
+
+If this times out or refuses to connect from another PC, it's a networking
+problem (firewall, wrong IP, wrong network profile) — see the troubleshooting
+notes at the bottom of this guide. If it works, TeamHub itself is fine.
+
 ## Step 3 — Point every machine's `.mcp.json` at the TeamHub host
 
 On every machine (the one running TeamHub, and every developer PC):
@@ -229,6 +248,48 @@ TEAMHUB_URL=http://192.168.1.20:8787/mcp \
   `docs/architecture.md` for the full mechanism (the watchdog polls
   `check_interrupt` directly over MCP and kills the in-flight `claude -p`
   process the moment the Lead calls `interrupt_developer`).
+
+## Troubleshooting: "it works on the TeamHub host but not from another PC"
+
+This is almost always networking, not TeamHub itself — work through these in
+order, on the **TeamHub host machine**:
+
+1. **Wrong IP, not a real block.** Confirm the host's actual LAN IP with
+   `ipconfig` (Windows) / `ifconfig` / `ip addr` (Mac/Linux) — don't use
+   `localhost` in another machine's config, that always means "itself."
+2. **Same-machine tests aren't proof.** `curl`/opening `/health` *from the
+   TeamHub host itself*, even using its own LAN IP, can succeed via loopback
+   even when a different machine would be blocked by the firewall. Always
+   test from the *other* machine.
+3. **Confirm it's listening on all interfaces:**
+   ```powershell
+   netstat -ano | findstr 8787
+   ```
+   Look for `0.0.0.0:8787` in `LISTENING` state (TeamHub binds this way by
+   default).
+4. **Windows Firewall — the most common blocker.** A connection that times
+   out (not "refused") from another machine usually means packets are being
+   silently dropped. Add an inbound rule, as Administrator:
+   ```powershell
+   New-NetFirewallRule -DisplayName "TeamHub" -Direction Inbound -Protocol TCP -LocalPort 8787 -Action Allow -Profile Any
+   ```
+   Verify it actually exists:
+   ```powershell
+   Get-NetFirewallRule -DisplayName "TeamHub" | Format-List DisplayName, Enabled, Direction, Action, Profile
+   ```
+5. **Network profile.** `Get-NetConnectionProfile` — if `NetworkCategory` is
+   `Public`, Windows Firewall blocks most inbound traffic regardless of
+   app-specific rules unless the rule above used `-Profile Any`.
+6. **Third-party antivirus/firewall software** (Norton, McAfee, Kaspersky,
+   etc.) runs its own separate firewall Windows Firewall commands can't see
+   — check its settings too if the above doesn't fix it.
+
+Once fixed, retest from the *other* machine with the plain TCP check:
+```powershell
+Test-NetConnection -ComputerName 192.168.1.20 -Port 8787
+```
+or hit `http://192.168.1.20:8787/health` directly in a browser — both should
+work without needing to speak the MCP protocol at all.
 
 ## Notes
 

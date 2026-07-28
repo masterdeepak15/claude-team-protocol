@@ -23,17 +23,24 @@ export function buildServer(): McpServer {
   return server;
 }
 
-function isMain(): boolean {
-  if (!process.argv[1]) return false;
-  const invoked = process.argv[1].replace(/\\/g, "/");
-  const thisFile = new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
-  return invoked.endsWith(thisFile) || thisFile.endsWith(invoked);
-}
+const startedAt = Date.now();
 
-if (isMain()) {
-  const PORT = Number(process.env.TEAMHUB_PORT || 8787);
+// A plain GET route, deliberately separate from the MCP protocol's POST /mcp
+// endpoint — browsable directly (curl, a browser tab, Test-NetConnection
+// followed by a quick fetch) so "is TeamHub actually reachable from this
+// machine" doesn't require speaking MCP or getting a confusing 404 for using
+// the wrong HTTP method.
+export function buildHttpApp(): express.Express {
   const app = express();
   app.use(express.json());
+
+  app.get("/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      service: "teamhub",
+      uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+    });
+  });
 
   app.post("/mcp", async (req, res) => {
     try {
@@ -53,8 +60,22 @@ if (isMain()) {
     }
   });
 
+  return app;
+}
+
+function isMain(): boolean {
+  if (!process.argv[1]) return false;
+  const invoked = process.argv[1].replace(/\\/g, "/");
+  const thisFile = new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+  return invoked.endsWith(thisFile) || thisFile.endsWith(invoked);
+}
+
+if (isMain()) {
+  const PORT = Number(process.env.TEAMHUB_PORT || 8787);
+  const app = buildHttpApp();
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`teamhub listening on http://0.0.0.0:${PORT}/mcp`);
     console.log(`Point other machines at http://<this-PC-LAN-IP>:${PORT}/mcp`);
+    console.log(`Health check: http://<this-PC-LAN-IP>:${PORT}/health`);
   });
 }
