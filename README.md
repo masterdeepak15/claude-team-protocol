@@ -52,6 +52,11 @@ including:
   terminal
 - Running unattended via `agents/runner.ts`, if you want headless operation
 
+Already have a project and want to bolt TeamHub onto it (rather than start
+fresh)? See **`docs/adopt-into-existing-project.md`** — no changes to your
+existing codebase, just an `.mcp.json` entry, the skills, and onboarding
+one teammate at a time.
+
 New to this? Start with **`docs/example-walkthrough.md`** instead — a full
 concrete run (two machines, one small project, real commands and real
 conversation snippets) that also explains who can actually give tasks
