@@ -144,6 +144,21 @@ export function checkInbox(handle: string): Message[] {
   return rows.map(rowToMessage);
 }
 
+// Non-mutating — doesn't touch `read` at all. Used by the monitoring UI to
+// show full conversation history (including already-read messages), which
+// checkInbox deliberately can't do since it's an ack-on-read operation.
+export function listMessages(project_id: string, handle?: string): Message[] {
+  let sql = `SELECT * FROM messages WHERE project_id = ?`;
+  const params: unknown[] = [project_id];
+  if (handle) {
+    sql += ` AND (from_handle = ? OR to_handle = ?)`;
+    params.push(handle, handle);
+  }
+  sql += ` ORDER BY ts ASC`;
+  const rows = db.prepare(sql).all(...params) as any[];
+  return rows.map(rowToMessage);
+}
+
 export function registerTools(server: McpServer): void {
   server.tool(
     "notify_assignment",

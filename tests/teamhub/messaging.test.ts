@@ -73,4 +73,32 @@ describe("messaging module", () => {
     const { peekInterrupt } = await import("../../teamhub/messaging.js");
     expect(peekInterrupt("dev-nobody")).toBeUndefined();
   });
+
+  it("listMessages returns the full project history without marking anything read (for the UI)", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { sendMessage, notifyAssignment, listMessages, checkInbox } = await import("../../teamhub/messaging.js");
+    createProject("proj-msg-f", "Messaging Project F", "PMSF");
+    sendMessage("proj-msg-f", "master-1", "dev-F", "hello dev-F");
+    notifyAssignment("proj-msg-f", "master-1", "dev-G", "PMSF-1", "do the thing");
+
+    const all = listMessages("proj-msg-f");
+    expect(all).toHaveLength(2);
+
+    // Unaffected by listMessages having been called — still unread via checkInbox.
+    const inbox = checkInbox("dev-F");
+    expect(inbox).toHaveLength(1);
+  });
+
+  it("listMessages filters to only messages to/from a given handle", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { sendMessage, listMessages } = await import("../../teamhub/messaging.js");
+    createProject("proj-msg-g", "Messaging Project G", "PMSG");
+    sendMessage("proj-msg-g", "master-1", "dev-H", "to dev-H");
+    sendMessage("proj-msg-g", "master-1", "dev-I", "to dev-I");
+    sendMessage("proj-msg-g", "dev-H", "master-1", "reply from dev-H");
+
+    const forDevH = listMessages("proj-msg-g", "dev-H");
+    expect(forDevH).toHaveLength(2);
+    expect(forDevH.every((m) => m.from_handle === "dev-H" || m.to_handle === "dev-H")).toBe(true);
+  });
 });
