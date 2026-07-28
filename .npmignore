@@ -1,0 +1,7 @@
+# Runtime data files — never part of the published package
+dist/teamhub/teamhub.db.sqlite
+dist/teamhub/teamhub.db.sqlite-shm
+dist/teamhub/teamhub.db.sqlite-wal
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal

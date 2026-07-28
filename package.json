@@ -24,7 +24,8 @@
     "teamhub": "dist/cli/teamhub-cli.js"
   },
   "files": [
-    "dist",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
     "skills",
     "templates",
     "LICENSE",
