@@ -71,6 +71,38 @@ time.
   an unattended loop via `claude -p --resume`, for overnight/unattended
   work. See `docs/setup-guide.md` for how to start either mode.
 
+## Developer mode and interrupts
+
+Every registered member has a `mode` on the `members` row: `manual`
+(default) or `auto`. It's set via `register`'s optional `mode` param or
+changed anytime with `set_mode` — always at the human's explicit choice,
+never something a session decides for itself.
+
+`mode` only changes real runtime behavior for a **headless** Developer
+(`agents/runner.ts --role developer --mode auto`):
+
+- Its `claude -p` cycles run with `--permission-mode bypassPermissions`
+  instead of the default `acceptEdits` — full auto-approval.
+- The runner keeps a second, lightweight loop running concurrently with
+  each cycle: `pollForInterrupt` connects directly to TeamHub over MCP
+  (`@modelcontextprotocol/sdk`'s `Client` + `StreamableHTTPClientTransport`,
+  no `claude` process spawned) and calls `check_interrupt` every
+  `--watchdog-interval` seconds (default 5). `check_interrupt` reads only
+  `interrupt`-type messages — a dedicated, non-consuming query so the
+  watchdog never steals a `task_assignment`/`message`/`status_update` row
+  that the main cycle's own `check_inbox` call is meant to see.
+- If the Lead calls `interrupt_developer`, the next watchdog tick sees it,
+  kills the in-flight `claude -p` child process (`child.kill()` on the
+  `ChildProcess` Node's promisified `execFile` attaches to the returned
+  promise), and immediately starts a fresh cycle using the interrupt's
+  reason as the prompt (`redirectPrompt`).
+
+For a `manual`-mode Developer, or any interactive session regardless of its
+recorded `mode`, `interrupt_developer` just inserts a normal `interrupt`-type
+row that shows up in that handle's next ordinary `check_inbox` call — there
+is no remote-kill capability, by design, whenever a human is (or might be)
+directly supervising that session.
+
 ## Storage
 
 Single SQLite file, WAL mode + `busy_timeout` pragma for concurrent access

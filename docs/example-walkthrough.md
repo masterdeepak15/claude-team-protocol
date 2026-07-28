@@ -240,3 +240,36 @@ npm run agent -- --role developer --project welcome-mailer --handle dev-A --mast
 It calls the exact same tools, on a timer, instead of you typing each
 instruction — you can mix modes too (Lead interactive, Developer headless,
 or vice versa), since they're all just talking to the same TeamHub server.
+
+## Interrupting a headless developer mid-task
+
+Say dev-A is running headless in `auto` mode:
+
+```bash
+TEAMHUB_URL=http://192.168.1.20:8787/mcp \
+  npm run agent -- --role developer --project welcome-mailer --handle dev-A \
+  --master-handle master-1 --mode auto
+```
+
+It's partway through WM-3 (SMTP send + retry) when requirements change — you
+decide to use SendGrid's API instead of raw SMTP. From the Lead's terminal
+(interactive or its own headless cycle):
+
+> Interrupt dev-A: stop the raw SMTP work, we're switching to SendGrid's API
+> for WM-3 instead.
+
+```
+→ interrupt_developer(project_id="welcome-mailer", from_handle="master-1", to_handle="dev-A", reason="Stop the raw SMTP work — switch WM-3 to SendGrid's API instead.")
+```
+
+Within one `--watchdog-interval` (default 5s), dev-A's runner:
+
+1. Notices the interrupt, kills its in-flight `claude -p` turn.
+2. Immediately starts a fresh turn with the reason as its instruction —
+   dev-A picks up mid-project knowing exactly what changed and why, instead
+   of finishing the now-obsolete SMTP approach first.
+
+If dev-A were instead running interactively, or registered in `manual`
+mode, the same `interrupt_developer` call still lands — but as an ordinary
+inbox item dev-A (or its human) sees on the next `check_inbox`, not an
+instant kill. Nothing remotely stops a session a human might be watching.

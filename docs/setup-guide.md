@@ -142,13 +142,48 @@ For overnight or unattended operation instead of an interactive session:
 # Lead / Master, any OS:
 npm run agent -- --role master --project bts-project --handle master-1
 
-# Developer, any OS:
+# Developer, any OS (manual mode — default, same as before):
 npm run agent -- --role developer --project bts-project --handle dev-A --master-handle master-1
 ```
 
 This requires `claude` on your `PATH` (same requirement as any Claude Code
 usage) and replaces the old bash + `jq` scripts — no extra dependencies are
 needed on Windows.
+
+### Auto mode: full auto-approval + the Lead can interrupt it
+
+Add `--mode auto` on a headless Developer to run fully auto-approved
+(`--permission-mode bypassPermissions` instead of the default
+`acceptEdits`) — **and** let the Lead remotely stop and redirect its
+in-flight work via `interrupt_developer`, instead of waiting for the next
+cycle:
+
+```bash
+# Developer runs on this machine — TEAMHUB_URL points its watchdog at the
+# TeamHub host directly (separately from whatever .mcp.json has, since the
+# watchdog talks to TeamHub without spawning `claude` at all):
+TEAMHUB_URL=http://192.168.1.20:8787/mcp \
+  npm run agent -- --role developer --project bts-project --handle dev-A \
+  --master-handle master-1 --mode auto --watchdog-interval 5
+```
+
+- `--watchdog-interval` (seconds, default 5) controls how often the
+  watchdog checks for an interrupt while a cycle is running — lower means
+  faster reaction, at the cost of slightly more frequent network calls to
+  TeamHub.
+- `TEAMHUB_URL` defaults to `http://localhost:<TEAMHUB_PORT or 8787>/mcp` if
+  unset, which only works when the Developer and TeamHub happen to run on
+  the same machine. In the normal cross-machine setup, set it explicitly.
+- This mode choice is per-registration and can be changed anytime — either
+  restart the runner with a different `--mode`, or have any session call
+  `set_mode(handle, "auto" | "manual")` directly.
+- `--mode auto` only changes behavior for a **headless** Developer. Setting
+  it while running interactively just records the intent in TeamHub —
+  Claude Code's own permission prompts in an interactive session aren't
+  affected, and nothing can remotely kill a turn a human is watching. See
+  `docs/architecture.md` for the full mechanism (the watchdog polls
+  `check_interrupt` directly over MCP and kills the in-flight `claude -p`
+  process the moment the Lead calls `interrupt_developer`).
 
 ## Notes
 
