@@ -3,8 +3,13 @@
 ## Overview
 
 One MCP server (`teamhub`), one SQLite file, multiple projects. Every
-`claude` session — Master or Developer, on any PC — connects to the same
-`teamhub` HTTP endpoint.
+`claude` session — Master, Developer, or Tester, on any PC — connects to the
+same `teamhub` HTTP endpoint. `role` is one of `master` | `developer` |
+`tester` on the `members` table; only `master` gets Lead-specific tools
+(`assign_task`, `create_task`, etc.) via the skills/allowed-tools lists —
+`developer` and `tester` share the same underlying tool surface and differ
+only in what their skill instructs them to do with it (write code vs.
+verify it).
 
 ```
                      PC1 (or a small always-on box)
@@ -69,7 +74,14 @@ time.
   skill installed, sees every tool call live, and can steer each turn.
 - **Headless (optional):** `agents/runner.ts` drives the same tool calls in
   an unattended loop via `claude -p --resume`, for overnight/unattended
-  work. See `docs/setup-guide.md` for how to start either mode.
+  work. Exposed two ways: `npm run agent --` from a repo checkout, or
+  `teamhub agent ...` from the globally-installed CLI package (no checkout
+  needed — see `cli/teamhub-cli.ts`, which dynamically imports the compiled
+  `dist/agents/runner.js` and forwards argv to its `main()`). Either way,
+  `process.cwd()` at invocation time is where the session-tracking file
+  lives **and** where the spawned `claude -p` process does its Read/Edit/
+  Bash work — `cd` into the actual target project first. See
+  `docs/setup-guide.md` for how to start either mode.
 
 ## Developer mode and interrupts
 
@@ -130,3 +142,14 @@ Single SQLite file, WAL mode + `busy_timeout` pragma for concurrent access
 from multiple agent processes. No Postgres, no second storage engine — see
 the design spec's "Non-goals" for why this was chosen over a repository
 abstraction.
+
+## Roadmap: a monitoring UI (not yet built)
+
+A web dashboard — projects, team roster with roles/modes, task/sprint
+status, live message feed — served from the **same port** as `/mcp` and
+`/health` (e.g. `GET /` or `GET /dashboard` on the existing Express app, no
+new process or port to open/firewall) is planned but not implemented yet.
+When built, it would be read-only against the same SQLite file the MCP
+tools already use — no new state, no auth added (same trust model as
+everything else here) — just a browsable view of what `list_projects` /
+`list_team` / `list_tasks` already expose through tool calls.

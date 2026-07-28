@@ -2,7 +2,8 @@
 
 This is for the common case: you already have a real codebase, you've been
 working on it solo (or ad hoc) without any of this, and now you want a
-Team Lead + several Developers coordinating on it through TeamHub.
+Team Lead + several Developers (and optionally Testers) coordinating on it
+through TeamHub.
 
 **Key idea: you don't modify your existing project's source at all.**
 TeamHub is a separate, small MCP server that runs alongside your project —
@@ -12,18 +13,20 @@ folder. Nothing about your codebase changes.
 ## Part A — Run the TeamHub server once (any one machine)
 
 Pick one machine to host TeamHub (yours is fine to start). It doesn't need
-to live inside your existing project's repo — keep it as its own folder:
+to live inside your existing project's repo. Fastest way — install the CLI
+from npm, no git clone needed:
 
 ```bash
-git clone <this claude-team-protocol repo, or copy the teamhub/ folder>
-cd claude-team-protocol
-npm install
-npm run build
-TEAMHUB_PORT=8787 npm run teamhub
+npm install -g @masterdeepak15/teamhub-cli
+teamhub start --port 8787
 ```
 
+(Or from a repo checkout instead: `git clone`, `npm install`, `npm run
+build`, `TEAMHUB_PORT=8787 npm run teamhub`.)
+
 Leave this running. Find this machine's LAN IP (`ipconfig` / `ifconfig`) —
-say it's `192.168.1.20`.
+say it's `192.168.1.20`. Confirm it's reachable from elsewhere with
+`curl http://192.168.1.20:8787/health`.
 
 ## Part B — Wire your EXISTING project to it
 
@@ -40,7 +43,7 @@ In your existing project's root, add or edit `.mcp.json`:
 
 ## Part C — Install the skills into your existing project
 
-The three role skills (`team-lead`, `team-developer`, `project-planner`)
+The role skills (`team-lead`, `team-developer`, `tester`, `project-planner`)
 are published as one Claude Code plugin, `teamhub-team`, on the Spyder
 marketplace. From inside your existing project's `claude` session:
 
@@ -50,10 +53,13 @@ marketplace. From inside your existing project's `claude` session:
 ```
 
 (Alternative, no marketplace step: `/plugin install
-https://github.com/masterdeepak15/Spyder/raw/main/dist/teamhub-team.plugin`)
+https://github.com/masterdeepak15/Spyder/raw/main/dist/teamhub-team.plugin`,
+or `teamhub install --skills` if you installed the npm CLI in Part A —
+copies them straight into `./.claude/skills`.)
 
 Whichever human is acting as Lead uses `team-lead` (or `project-planner`
-for just the initial setup); every Developer uses `team-developer`.
+for just the initial setup); every Developer uses `team-developer`; every
+Tester uses `tester`.
 
 ## Part C.5 — Drop in a CLAUDE.md so every session knows the conventions
 
@@ -113,18 +119,25 @@ Repeat step by step for a 3rd, 4th, 10th teammate — same two prompts each
 time, no server restart, no config change, no code change. `list_team` and
 `list_tasks` scale to however many handles are registered on the project.
 
-## Part F — Day-to-day, with several developers running at once
+## Part F — Day-to-day, with several developers (and testers) running at once
 
 The Lead's core loop doesn't change with team size — it's still just:
 
 > Check your inbox, then check the backlog. Assign any ready task to
-> whichever registered developer doesn't currently have an active one.
+> whichever registered developer or tester doesn't currently have an
+> active one.
 
-Each developer's loop is the same regardless of how many other developers
+Each developer's or tester's loop is the same regardless of how many others
 exist — they only ever see their own inbox and their own assigned tasks
 (`check_inbox`, `get_task`, `report_status` are all scoped to their own
-handle). Adding teammates never makes an individual developer's session do
-more work or see more noise.
+handle). Adding teammates never makes an individual session do more work or
+see more noise.
+
+A common flow once a tester is registered: the Lead assigns a task to a
+developer, the developer moves it to `in_review` and reports done, the Lead
+assigns the *same* task (or a follow-up test task) to a tester, who runs/
+writes tests, files any bugs as comments, and reports back — only then does
+the Lead call it truly `done`.
 
 ## Reminder: any human can act directly
 

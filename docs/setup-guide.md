@@ -113,12 +113,15 @@ Replace `192.168.1.20` with the TeamHub host's real LAN IP.
 
 ## Step 4 — Copy the skills
 
-Put `skills/team-lead`, `skills/team-developer`, and (optionally)
-`skills/project-planner` into each relevant machine's `.claude/skills/`
-folder:
+Put `skills/team-lead`, `skills/team-developer`, `skills/tester`, and
+(optionally) `skills/project-planner` into each relevant machine's
+`.claude/skills/` folder:
 - The Lead's machine gets `team-lead` (and `project-planner` if that human
   will also be setting up new projects).
 - Each Developer's machine gets `team-developer`.
+- Each Tester's machine gets `tester` — pulls test tasks, runs/writes
+  tests, files bugs, and reports results back to the Lead. Same setup as a
+  Developer otherwise (register with `role="tester"` instead).
 
 ## Step 5 — Kick off a new project (human-driven, interactive)
 
@@ -197,15 +200,28 @@ identically once that's set up — it's the same `teamhub` tools either way.
 
 ## Step 6 — (Optional) Run unattended with the headless runner
 
-For overnight or unattended operation instead of an interactive session:
+For overnight or unattended operation instead of an interactive session.
+If you installed via `npm install -g @masterdeepak15/teamhub-cli`, use
+`teamhub agent` — no repo checkout needed:
 
 ```bash
+# Run these FROM the actual project directory you want worked on — cwd is
+# where the session-tracking file lives AND where the spawned claude -p
+# process does its Read/Edit/Bash work.
+cd /path/to/your/project
+
 # Lead / Master, any OS:
-npm run agent -- --role master --project bts-project --handle master-1
+teamhub agent --role master --project bts-project --handle master-1
 
 # Developer, any OS (manual mode — default, same as before):
-npm run agent -- --role developer --project bts-project --handle dev-A --master-handle master-1
+teamhub agent --role developer --project bts-project --handle dev-A --master-handle master-1
+
+# Tester, any OS:
+teamhub agent --role tester --project bts-project --handle tester-1 --master-handle master-1
 ```
+
+(From a repo checkout instead, the equivalent is `npm run agent -- --role ...` —
+same underlying code, same cwd behavior, just invoked via npm scripts.)
 
 This requires `claude` on your `PATH` (same requirement as any Claude Code
 usage) and replaces the old bash + `jq` scripts — no extra dependencies are
@@ -213,21 +229,21 @@ needed on Windows.
 
 ### Auto mode: auto-approved edits + the Lead can interrupt it
 
-Add `--mode auto` on a headless Developer to auto-approve file edits
-(`--permission-mode acceptEdits` — same as manual mode, no change there)
-**and** let the Lead remotely stop and redirect its in-flight work via
-`interrupt_developer`, instead of waiting for the next cycle. Bash commands
-still require confirmation in both modes — auto mode is deliberately never
-`bypassPermissions`, since TeamHub has no authentication and a crafted
-`interrupt_developer` reason would otherwise be a real prompt-injection
-path straight to unconfirmed shell execution:
+Add `--mode auto` on a headless Developer or Tester to auto-approve file
+edits (`--permission-mode acceptEdits` — same as manual mode, no change
+there) **and** let the Lead remotely stop and redirect its in-flight work
+via `interrupt_developer`, instead of waiting for the next cycle. Bash
+commands still require confirmation in both modes — auto mode is
+deliberately never `bypassPermissions`, since TeamHub has no authentication
+and a crafted `interrupt_developer` reason would otherwise be a real
+prompt-injection path straight to unconfirmed shell execution:
 
 ```bash
-# Developer runs on this machine — TEAMHUB_URL points its watchdog at the
+# Run from the project directory — TEAMHUB_URL points the watchdog at the
 # TeamHub host directly (separately from whatever .mcp.json has, since the
 # watchdog talks to TeamHub without spawning `claude` at all):
 TEAMHUB_URL=http://192.168.1.20:8787/mcp \
-  npm run agent -- --role developer --project bts-project --handle dev-A \
+  teamhub agent --role developer --project bts-project --handle dev-A \
   --master-handle master-1 --mode auto --watchdog-interval 5
 ```
 
@@ -241,7 +257,8 @@ TEAMHUB_URL=http://192.168.1.20:8787/mcp \
 - This mode choice is per-registration and can be changed anytime — either
   restart the runner with a different `--mode`, or have any session call
   `set_mode(handle, "auto" | "manual")` directly.
-- `--mode auto` only changes behavior for a **headless** Developer. Setting
+- `--mode auto` only changes behavior for a **headless** Developer or
+  Tester. Setting
   it while running interactively just records the intent in TeamHub —
   Claude Code's own permission prompts in an interactive session aren't
   affected, and nothing can remotely kill a turn a human is watching. See

@@ -1,9 +1,10 @@
 # Claude Team Protocol — TeamHub
 
 A multi-agent team workflow for Claude Code: one Team Lead session plans and
-assigns work, one or more Developer sessions do the coding, and everyone
-talks through **TeamHub** — a single, self-hosted MCP server that replaces
-Jira/relay/planner-style juggling with one free, SQLite-backed service.
+assigns work, Developer sessions write the code, Tester sessions verify it
+and report bugs, and everyone talks through **TeamHub** — a single,
+self-hosted MCP server that replaces Jira/relay/planner-style juggling with
+one free, SQLite-backed service.
 
 TeamHub is project-aware: one instance can host multiple projects, each with
 its own sprints, tasks, and team roster.
@@ -43,6 +44,7 @@ agents/
 skills/
   team-lead/SKILL.md        — Team Lead behavior
   team-developer/SKILL.md   — Developer behavior
+  tester/SKILL.md           — Tester behavior (run/write tests, file bugs)
   project-planner/SKILL.md  — project setup/health-check admin skill
 scripts/
   migrate-legacy-to-teamhub.ts — one-time import from the old relay+planner setup
@@ -67,7 +69,9 @@ including:
   a project brief, the Lead plans it into tasks, and connected Developer
   sessions pick up their assignments, all visible live in each person's own
   terminal
-- Running unattended via `agents/runner.ts`, if you want headless operation
+- Running unattended via `teamhub agent` (or `agents/runner.ts` from a repo
+  checkout), if you want headless operation for a Developer, Tester, or
+  the Lead
 
 Already have a project and want to bolt TeamHub onto it (rather than start
 fresh)? See **`docs/adopt-into-existing-project.md`** — no changes to your
@@ -95,8 +99,10 @@ See **`docs/migration.md`**.
   GitHub work, but can't message each other or see tasks until it's back —
   run it on a small always-on box instead of the Lead's own PC if that's a
   concern.
-- TeamHub is intentionally simple (no auth, no UI) — same trust model as
-  before: one office LAN, not a multi-tenant service.
+- TeamHub is intentionally simple (no auth, no UI yet — a read-only
+  monitoring dashboard on the same port is on the roadmap, see
+  `docs/architecture.md`) — same trust model as before: one office LAN, not
+  a multi-tenant service.
 
 ## License
 
