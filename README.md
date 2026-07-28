@@ -52,6 +52,12 @@ including:
   terminal
 - Running unattended via `agents/runner.ts`, if you want headless operation
 
+New to this? Start with **`docs/example-walkthrough.md`** instead — a full
+concrete run (two machines, one small project, real commands and real
+conversation snippets) that also explains who can actually give tasks
+(short answer: any human, on either side, at any time — the Lead isn't a
+gatekeeper).
+
 See **`docs/architecture.md`** for how TeamHub is put together, and
 **`docs/skills-guide.md`** for how to write your own skills.
 

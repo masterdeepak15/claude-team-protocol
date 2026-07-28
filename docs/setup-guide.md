@@ -1,5 +1,9 @@
 # TeamHub Setup Guide
 
+> Looking for a concrete, worked example instead of abstract steps? See
+> **`docs/example-walkthrough.md`** — it walks through this entire guide
+> with a real project, real commands, and real conversation snippets.
+
 ## Step 1 — Install and build (on the machine that will run TeamHub)
 
 macOS/Linux and Windows both use the same commands:
@@ -58,7 +62,15 @@ folder:
 ## Step 5 — Kick off a new project (human-driven, interactive)
 
 This is the primary way to start real work — a human drives it, sees
-everything live in their own terminal:
+everything live in their own terminal.
+
+**Important:** the Lead is not a gatekeeper. Both the Lead session and every
+Developer session are plain, interactive `claude` sessions — the skill is
+just a default playbook, not a restriction. Any human, on either side, can
+directly ask their session to call any TeamHub tool at any time (e.g. a
+developer's human can say "create a task for this bug and assign it to
+yourself" without the Lead being involved). See
+`docs/example-walkthrough.md` for this in action.
 
 1. On the Lead's machine, run plain `claude` in this project's directory
    (no `-p`).
