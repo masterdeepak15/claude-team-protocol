@@ -93,26 +93,35 @@ yourself" without the Lead being involved). See
 
 Everything above assumes the Claude Code CLI (`claude`). If someone on the
 team prefers the Claude Desktop app, it can talk to the same TeamHub server
-— MCP servers aren't CLI-specific, so no changes on the TeamHub side are
-needed.
+— but unlike `.mcp.json`, Desktop's config only supports **local stdio
+servers** (a `command` it spawns), not a `"type": "http"` remote entry.
+Since TeamHub only exposes HTTP, Desktop needs a small stdio↔HTTP bridge —
+the standard tool for that is the
+[`mcp-remote`](https://www.npmjs.com/package/mcp-remote) npm package,
+spawned via `npx`. Requires Node.js installed on the Desktop machine (same
+requirement TeamHub itself already has).
 
 1. Open Claude Desktop → **Settings → Developer → Edit Config** (or open
    the config file directly):
    - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
    - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
    - **Linux:** `~/.config/Claude/claude_desktop_config.json`
-2. Add the same `teamhub` entry used in `.mcp.json`:
+2. Add a `command`-based entry that bridges to TeamHub's HTTP endpoint:
 
    ```json
    {
      "mcpServers": {
-       "teamhub": { "type": "http", "url": "http://192.168.1.20:8787/mcp" }
+       "teamhub": {
+         "command": "npx",
+         "args": ["-y", "mcp-remote", "http://192.168.1.20:8787/mcp"]
+       }
      }
    }
    ```
 3. Restart Claude Desktop. Open a new chat — the `teamhub` tools
    (`register`, `check_inbox`, `create_task`, etc.) now appear in that
-   chat's tool list, same as in Claude Code.
+   chat's tool list, same as in Claude Code. The first launch may take a
+   few seconds while `npx` fetches `mcp-remote`.
 
 **One real limitation:** Claude Desktop has no skills system, so
 `team-lead` / `team-developer` won't auto-load there. To get the same
