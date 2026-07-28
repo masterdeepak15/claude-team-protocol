@@ -16,3 +16,6 @@ legacy/planner/planner.db.sqlite-wal
 
 # Agent runner session state
 .*-session-id
+
+# Harness-generated skill packaging cache
+skills/*.zip
