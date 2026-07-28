@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS members (
   project_id TEXT NOT NULL REFERENCES projects(id),
   role TEXT NOT NULL,
   status TEXT,
-  last_seen TEXT NOT NULL
+  last_seen TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'manual'
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -67,12 +68,20 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 `;
 
+function migrate(db: Database.Database): void {
+  const memberColumns = db.prepare(`PRAGMA table_info(members)`).all() as Array<{ name: string }>;
+  if (!memberColumns.some((c) => c.name === "mode")) {
+    db.exec(`ALTER TABLE members ADD COLUMN mode TEXT NOT NULL DEFAULT 'manual'`);
+  }
+}
+
 export function openDb(path?: string): Database.Database {
   const dbPath = path ?? process.env.TEAMHUB_DB ?? join(__dirname, "teamhub.db.sqlite");
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 
