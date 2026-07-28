@@ -19,3 +19,6 @@ legacy/planner/planner.db.sqlite-wal
 
 # Harness-generated skill packaging cache
 skills/*.zip
+
+# Never commit local npm auth
+.npmrc
