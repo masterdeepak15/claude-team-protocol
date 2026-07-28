@@ -9,7 +9,7 @@ export interface Message {
   project_id: string;
   from_handle: string;
   to_handle: string;
-  type: "task_assignment" | "message" | "status_update";
+  type: "task_assignment" | "message" | "status_update" | "interrupt";
   text: string;
   task_ref?: string;
   ts: string;
@@ -99,6 +99,40 @@ export function reportStatus(
   return msg;
 }
 
+export function interruptDeveloper(
+  project_id: string,
+  from_handle: string,
+  to_handle: string,
+  reason: string
+): Message {
+  const msg: Message = {
+    id: randomUUID(),
+    project_id,
+    from_handle,
+    to_handle,
+    type: "interrupt",
+    text: reason,
+    ts: now(),
+    read: false,
+  };
+  insertMessage(msg);
+  return msg;
+}
+
+// Unlike checkInbox, this only reads and consumes 'interrupt'-type rows —
+// used by the headless runner's watchdog so it doesn't steal ordinary
+// task_assignment/message/status_update rows meant for the main turn.
+export function peekInterrupt(handle: string): Message | undefined {
+  const row = db
+    .prepare(
+      `SELECT * FROM messages WHERE to_handle = ? AND type = 'interrupt' AND read = 0 ORDER BY ts ASC LIMIT 1`
+    )
+    .get(handle) as any;
+  if (!row) return undefined;
+  db.prepare(`UPDATE messages SET read = 1 WHERE id = ?`).run(row.id);
+  return rowToMessage(row);
+}
+
 export function checkInbox(handle: string): Message[] {
   const rows = db
     .prepare(`SELECT * FROM messages WHERE to_handle = ? AND read = 0 ORDER BY ts ASC`)
@@ -174,6 +208,42 @@ export function registerTools(server: McpServer): void {
           return { content: [{ type: "text", text: "No new messages." }] };
         }
         return { content: [{ type: "text", text: JSON.stringify(messages, null, 2) }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: String(err) }] };
+      }
+    }
+  );
+
+  server.tool(
+    "interrupt_developer",
+    "Master only: interrupt a developer's in-flight work with a new instruction. Only takes effect if that developer is registered in 'auto' mode and running headless via agents/runner.ts — its watchdog polls for this and kills + redirects the current turn. For a developer in 'manual' mode (or running interactively), this just arrives as a normal inbox item they'll see on their own next check.",
+    {
+      project_id: z.string(),
+      from_handle: z.string(),
+      to_handle: z.string(),
+      reason: z.string().describe("What to stop and what to do instead"),
+    },
+    async ({ project_id, from_handle, to_handle, reason }) => {
+      try {
+        interruptDeveloper(project_id, from_handle, to_handle, reason);
+        return { content: [{ type: "text", text: `Interrupt sent to ${to_handle}.` }] };
+      } catch (err) {
+        return { isError: true, content: [{ type: "text", text: String(err) }] };
+      }
+    }
+  );
+
+  server.tool(
+    "check_interrupt",
+    "Check whether an interrupt has been sent to this handle, without consuming any other unread messages. Intended for the headless runner's watchdog, not for normal turn-start use — use check_inbox for that.",
+    { handle: z.string() },
+    async ({ handle }) => {
+      try {
+        const interrupt = peekInterrupt(handle);
+        if (!interrupt) {
+          return { content: [{ type: "text", text: "No interrupt." }] };
+        }
+        return { content: [{ type: "text", text: JSON.stringify(interrupt, null, 2) }] };
       } catch (err) {
         return { isError: true, content: [{ type: "text", text: String(err) }] };
       }
