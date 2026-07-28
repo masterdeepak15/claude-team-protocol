@@ -8,6 +8,7 @@ import {
   buildWindowsAutostartRemoveArgs,
   buildLaunchdPlist,
   buildSystemdUnit,
+  parseMeta,
   helpText,
 } from "../../cli/teamhub-cli.js";
 
@@ -126,10 +127,30 @@ describe("buildSystemdUnit", () => {
   });
 });
 
+describe("parseMeta", () => {
+  it("defaults to port 8787 with no dbPath when there's no prior state", () => {
+    expect(parseMeta(undefined)).toEqual({ port: 8787 });
+  });
+
+  it("parses a previously recorded port and dbPath", () => {
+    const raw = JSON.stringify({ port: 9000, dbPath: "/home/x/.teamhub/teamhub.db.sqlite" });
+    expect(parseMeta(raw)).toEqual({ port: 9000, dbPath: "/home/x/.teamhub/teamhub.db.sqlite" });
+  });
+
+  it("falls back to the default port when dbPath was never set", () => {
+    const raw = JSON.stringify({ port: 9000 });
+    expect(parseMeta(raw)).toEqual({ port: 9000, dbPath: undefined });
+  });
+
+  it("falls back to defaults on corrupt/invalid JSON rather than throwing", () => {
+    expect(parseMeta("{not valid json")).toEqual({ port: 8787 });
+  });
+});
+
 describe("helpText", () => {
   it("mentions every command", () => {
     const text = helpText();
-    for (const cmd of ["install", "start", "stop", "status", "logs", "agent", "help"]) {
+    for (const cmd of ["install", "start", "stop", "status", "logs", "agent", "upgrade", "help"]) {
       expect(text).toContain(cmd);
     }
   });

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
+import crossSpawn from "cross-spawn";
 import {
   existsSync,
   mkdirSync,
@@ -35,6 +36,28 @@ export function pidFilePath(): string {
 
 export function logFilePath(): string {
   return join(stateDir(), "teamhub.log");
+}
+
+export function metaFilePath(): string {
+  return join(stateDir(), "teamhub.meta.json");
+}
+
+// Pure parser for the "what was TeamHub last started with" state, so
+// `upgrade` can restart with the same port/db without the caller having to
+// remember or re-pass them. `raw` is the meta file's content, or undefined
+// if it doesn't exist yet (fresh install, never started).
+export function parseMeta(raw: string | undefined): { port: number; dbPath?: string } {
+  if (!raw) return { port: 8787 };
+  try {
+    const parsed = JSON.parse(raw);
+    const port = Number(parsed.port);
+    return {
+      port: Number.isFinite(port) ? port : 8787,
+      dbPath: typeof parsed.dbPath === "string" ? parsed.dbPath : undefined,
+    };
+  } catch {
+    return { port: 8787 };
+  }
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -178,6 +201,12 @@ Commands:
   uninstall-autostart
       Remove the auto-start registration created by \`install --autostart\`.
 
+  upgrade, update [--port <n>] [--db <path>]
+      Stop the running TeamHub server (if any), install the latest
+      @masterdeepak15/teamhub-cli from npm, then start it back up — with
+      whatever port/db it was last running with, unless you override with
+      --port/--db. Safe to run even if TeamHub isn't currently running.
+
   help, --help
       Show this text.
 `;
@@ -192,6 +221,14 @@ function readPid(): number | undefined {
   const raw = readFileSync(pidFilePath(), "utf-8").trim();
   const pid = Number(raw);
   return Number.isFinite(pid) ? pid : undefined;
+}
+
+function readMeta(): { port: number; dbPath?: string } {
+  return parseMeta(existsSync(metaFilePath()) ? readFileSync(metaFilePath(), "utf-8") : undefined);
+}
+
+function writeMeta(port: number, dbPath: string | undefined): void {
+  writeFileSync(metaFilePath(), JSON.stringify({ port, dbPath: dbPath ?? null }));
 }
 
 function desktopConfigPath(): string {
@@ -307,6 +344,7 @@ function startServer(port: number, dbPath: string | undefined): void {
   });
   closeSync(logFd);
   writeFileSync(pidFilePath(), String(child.pid));
+  writeMeta(port, dbPath);
   child.unref();
   console.log(`TeamHub started in the background (pid ${child.pid}, port ${port}).`);
   console.log(`Logs: teamhub logs   (file: ${logFilePath()})`);
@@ -335,6 +373,59 @@ function statusServer(): void {
   } else {
     console.log("TeamHub is not running.");
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Windows can take a moment to fully release a just-killed process's file
+// handles (observed as npm install failing with EBUSY renaming dist/ files
+// immediately after stopServer() — the OS hadn't finished cleanup yet).
+// Wait for the pid to actually disappear, plus a short extra grace period.
+async function waitForExit(pid: number, timeoutMs: number): Promise<void> {
+  const start = Date.now();
+  while (isProcessAlive(pid) && Date.now() - start < timeoutMs) {
+    await sleep(150);
+  }
+  await sleep(300);
+}
+
+async function upgradeTeamhub(explicitPort: number | undefined, explicitDb: string | undefined): Promise<void> {
+  const meta = readMeta();
+  const port = explicitPort ?? meta.port;
+  const dbPath = explicitDb ?? meta.dbPath;
+
+  const pid = readPid();
+  if (pid && isProcessAlive(pid)) {
+    console.log("Stopping the running TeamHub server...");
+    stopServer();
+    await waitForExit(pid, 5000);
+  }
+
+  console.log("Installing the latest @masterdeepak15/teamhub-cli from npm...");
+  try {
+    // cross-spawn, not execFileSync directly: on Windows, npm resolves to
+    // npm.cmd, and Windows can only run .cmd files through cmd.exe —
+    // execFileSync/spawnSync fail with EINVAL invoking one directly.
+    // cross-spawn resolves and invokes it correctly without needing
+    // `shell: true` (which would reopen a shell-injection surface).
+    const result = crossSpawn.sync("npm", ["install", "-g", "@masterdeepak15/teamhub-cli@latest"], {
+      stdio: "inherit",
+    });
+    if (result.status !== 0) {
+      throw result.error ?? new Error(`npm install exited with code ${result.status}`);
+    }
+    console.log("Upgrade complete.");
+  } catch (err) {
+    console.error(
+      "npm install failed — starting the server back up with whatever version is currently installed.",
+      err
+    );
+  }
+
+  console.log("Starting TeamHub...");
+  startServer(port, dbPath);
 }
 
 function showLogs(lines: number, follow: boolean): void {
@@ -438,6 +529,13 @@ export async function main(argv: string[]): Promise<void> {
       break;
     case "uninstall-autostart":
       uninstallAutostart();
+      break;
+    case "upgrade":
+    case "update":
+      await upgradeTeamhub(
+        flags.port !== undefined ? Number(flags.port) : undefined,
+        typeof flags.db === "string" ? flags.db : undefined
+      );
       break;
     case "agent": {
       const runnerPath = join(PACKAGE_ROOT, "dist", "agents", "runner.js");

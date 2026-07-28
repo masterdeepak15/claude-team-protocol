@@ -1,10 +1,8 @@
 #!/usr/bin/env node
-import { execFile, type ChildProcess } from "node:child_process";
-import { promisify } from "node:util";
+import type { ChildProcess } from "node:child_process";
+import crossSpawn from "cross-spawn";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-
-const execFileAsync = promisify(execFile);
 
 export interface RunnerArgs {
   role: "master" | "developer" | "tester";
@@ -43,8 +41,14 @@ export function parseArgs(argv: string[]): RunnerArgs {
   };
 }
 
+// Bare command name on every platform — cross-spawn resolves it through the
+// OS's normal PATH/PATHEXT lookup, whatever the actual file turns out to be
+// (.exe, .cmd, .bat, or no extension at all on POSIX). Don't hardcode a
+// specific extension here: which one a real Claude Code install produces
+// on Windows varies by install method, and guessing wrong just trades one
+// spawn failure for another.
 export function claudeCommand(): string {
-  return process.platform === "win32" ? "claude.cmd" : "claude";
+  return "claude";
 }
 
 // Always acceptEdits, deliberately never bypassPermissions: TeamHub has no
@@ -107,6 +111,17 @@ interface SpawnHandle {
   result: Promise<{ stdout: string }>;
 }
 
+// Uses cross-spawn rather than node:child_process's execFile directly:
+// on Windows, `claude` resolves to `claude.cmd`, and Windows can only
+// execute .cmd/.bat files through cmd.exe — execFile/spawnSync fail with
+// EINVAL trying to invoke one directly. The naive fix (`shell: true`)
+// reopens exactly the prompt-injection risk fixed elsewhere in this file:
+// Node explicitly loses its argument-array injection protection on
+// Windows once `shell: true` is set, since the whole command line gets
+// concatenated and re-interpreted by cmd.exe. cross-spawn solves the
+// .cmd-invocation problem without that trade-off — it does its own
+// careful argument escaping so each array element still reaches the
+// child process as a literal value, not something cmd.exe re-parses.
 function spawnClaude(
   prompt: string,
   handle: string,
@@ -115,16 +130,32 @@ function spawnClaude(
 ): SpawnHandle {
   const file = sessionFile(handle);
   const resumeArgs = existsSync(file) ? ["--resume", readFileSync(file, "utf-8").trim()] : [];
-  const promise = execFileAsync(
+  const child: ChildProcess = crossSpawn(
     claudeCommand(),
-    ["-p", prompt, ...resumeArgs, "--allowedTools", allowedTools, "--permission-mode", permissionMode, "--output-format", "json"],
-    { maxBuffer: 10 * 1024 * 1024 }
+    ["-p", prompt, ...resumeArgs, "--allowedTools", allowedTools, "--permission-mode", permissionMode, "--output-format", "json"]
   );
-  // Node's promisified execFile attaches the underlying ChildProcess to the
-  // returned promise as `.child` — that's what lets the watchdog kill an
-  // in-flight `claude -p` invocation.
-  const child = (promise as unknown as { child: ChildProcess }).child;
-  return { child, result: promise };
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout?.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr?.on("data", (chunk) => {
+    stderr += chunk;
+  });
+
+  const result = new Promise<{ stdout: string }>((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`claude exited with code ${code}: ${stderr}`));
+      } else {
+        resolve({ stdout });
+      }
+    });
+  });
+
+  return { child, result };
 }
 
 function finishCycle(stdout: string, handle: string): void {

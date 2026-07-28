@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   parseArgs,
   claudeCommand,
@@ -84,18 +84,7 @@ describe("parseArgs", () => {
 });
 
 describe("claudeCommand", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.restoreAllMocks();
-  });
-
-  it("uses claude.cmd on win32", () => {
-    vi.spyOn(process, "platform", "get").mockReturnValue("win32");
-    expect(claudeCommand()).toBe("claude.cmd");
-  });
-
-  it("uses claude on other platforms", () => {
-    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+  it("returns the bare command name regardless of platform — cross-spawn resolves the actual file", () => {
     expect(claudeCommand()).toBe("claude");
   });
 });
