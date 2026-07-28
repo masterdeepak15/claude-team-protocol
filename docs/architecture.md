@@ -81,8 +81,15 @@ never something a session decides for itself.
 `mode` only changes real runtime behavior for a **headless** Developer
 (`agents/runner.ts --role developer --mode auto`):
 
-- Its `claude -p` cycles run with `--permission-mode bypassPermissions`
-  instead of the default `acceptEdits` — full auto-approval.
+- Its `claude -p` cycles still run with `--permission-mode acceptEdits` —
+  **deliberately never `bypassPermissions`**. TeamHub has no authentication
+  (see Non-goals in the design spec), so anyone who can reach its HTTP port
+  could otherwise call `interrupt_developer` (or `notify_assignment` /
+  `send_message`) with a crafted `reason`/`summary` string, which gets fed
+  verbatim as the next instruction. With `bypassPermissions`, that would be
+  a real prompt-injection-to-RCE path — Bash execution with zero
+  confirmation. `acceptEdits` keeps file edits auto-approved (the actual
+  value of "auto" mode) while leaving Bash gated.
 - The runner keeps a second, lightweight loop running concurrently with
   each cycle: `pollForInterrupt` connects directly to TeamHub over MCP
   (`@modelcontextprotocol/sdk`'s `Client` + `StreamableHTTPClientTransport`,

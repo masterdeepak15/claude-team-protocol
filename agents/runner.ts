@@ -47,11 +47,14 @@ export function claudeCommand(): string {
   return process.platform === "win32" ? "claude.cmd" : "claude";
 }
 
-// Developers in 'auto' mode run fully auto-approved and can be remotely
-// interrupted by the Lead (see runInterruptibleCycle). Everyone else keeps
-// the existing, more conservative default.
-export function permissionModeFor(args: RunnerArgs): "acceptEdits" | "bypassPermissions" {
-  if (args.role === "developer" && args.mode === "auto") return "bypassPermissions";
+// Always acceptEdits, deliberately never bypassPermissions: TeamHub has no
+// authentication, so anyone reaching its HTTP port could otherwise inject
+// text (e.g. via interrupt_developer's `reason`) that gets fed verbatim as
+// the next instruction to a fully unconfirmed session — a real
+// prompt-injection-to-RCE path if Bash execution were auto-approved too.
+// 'auto' mode's real feature is auto-approved edits + interruptibility
+// (see runInterruptibleCycle), not removing Bash's confirmation gate.
+export function permissionModeFor(_args: RunnerArgs): "acceptEdits" {
   return "acceptEdits";
 }
 

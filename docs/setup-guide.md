@@ -150,13 +150,16 @@ This requires `claude` on your `PATH` (same requirement as any Claude Code
 usage) and replaces the old bash + `jq` scripts — no extra dependencies are
 needed on Windows.
 
-### Auto mode: full auto-approval + the Lead can interrupt it
+### Auto mode: auto-approved edits + the Lead can interrupt it
 
-Add `--mode auto` on a headless Developer to run fully auto-approved
-(`--permission-mode bypassPermissions` instead of the default
-`acceptEdits`) — **and** let the Lead remotely stop and redirect its
-in-flight work via `interrupt_developer`, instead of waiting for the next
-cycle:
+Add `--mode auto` on a headless Developer to auto-approve file edits
+(`--permission-mode acceptEdits` — same as manual mode, no change there)
+**and** let the Lead remotely stop and redirect its in-flight work via
+`interrupt_developer`, instead of waiting for the next cycle. Bash commands
+still require confirmation in both modes — auto mode is deliberately never
+`bypassPermissions`, since TeamHub has no authentication and a crafted
+`interrupt_developer` reason would otherwise be a real prompt-injection
+path straight to unconfirmed shell execution:
 
 ```bash
 # Developer runs on this machine — TEAMHUB_URL points its watchdog at the

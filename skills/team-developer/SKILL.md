@@ -32,10 +32,13 @@ partner explicitly tells you to, either at registration
   arrive as a normal inbox item on your own next `check_inbox` — nothing
   can stop you mid-turn.
 - **`auto`** — meaningful only when you're running headless via
-  `agents/runner.ts` with `--mode auto`: you're fully auto-approved
-  (`bypassPermissions`), and the runner's watchdog can kill and immediately
+  `agents/runner.ts` with `--mode auto`: file edits are auto-approved
+  (`acceptEdits`), and the runner's watchdog can kill and immediately
   redirect your in-flight work if the Lead calls `interrupt_developer` on
-  you. If a cycle ends because you were interrupted, your very next
+  you. Bash commands still require confirmation either way — TeamHub has no
+  authentication, so anyone reaching its port could otherwise inject a
+  crafted `reason` into an interrupt and have it executed with no gate at
+  all. If a cycle ends because you were interrupted, your very next
   instruction will say so explicitly — stop pursuing whatever you were
   doing before and follow it.
 - Setting `mode="auto"` while running interactively (a human at the

@@ -90,10 +90,10 @@ describe("claudeCommand", () => {
 });
 
 describe("permissionModeFor", () => {
-  it("returns bypassPermissions for a developer in auto mode", () => {
+  it("returns acceptEdits for a developer in auto mode (never bypassPermissions — no auth on TeamHub)", () => {
     expect(
       permissionModeFor({ role: "developer", project: "p", handle: "dev-A", cycle: 30, mode: "auto", watchdogInterval: 5 })
-    ).toBe("bypassPermissions");
+    ).toBe("acceptEdits");
   });
 
   it("returns acceptEdits for a developer in manual mode", () => {
@@ -173,7 +173,7 @@ describe("runInterruptibleCycle", () => {
       "prompt",
       "dev-A",
       "tools",
-      "bypassPermissions",
+      "acceptEdits",
       pollInterrupt,
       5,
       spawn as any
@@ -196,7 +196,7 @@ describe("runInterruptibleCycle", () => {
       "prompt",
       "dev-A",
       "tools",
-      "bypassPermissions",
+      "acceptEdits",
       pollInterrupt,
       5,
       spawn as any
@@ -225,7 +225,7 @@ describe("runInterruptibleCycle", () => {
       "prompt",
       "dev-A",
       "tools",
-      "bypassPermissions",
+      "acceptEdits",
       pollInterrupt,
       5,
       spawn as any
