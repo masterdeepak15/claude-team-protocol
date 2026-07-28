@@ -33,9 +33,14 @@ teamhub start           # start the server in the background
 teamhub status          # is it running?
 teamhub logs            # see its output (--follow to tail continuously)
 teamhub stop            # stop it
+teamhub upgrade         # stop it, npm-install the latest teamhub-cli, start it back up
 teamhub uninstall-autostart   # remove the auto-start registration
 teamhub --help           # full command reference
 ```
+
+`teamhub upgrade` (alias `update`) restarts with whatever port/db it was
+last running with — no need to remember or re-pass them. Safe to run even
+if TeamHub isn't currently running.
 
 `--autostart` registers TeamHub with Windows Task Scheduler, a macOS
 LaunchAgent, or a Linux systemd `--user` service, matching your OS —

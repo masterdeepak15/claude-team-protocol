@@ -29,7 +29,7 @@ teamhub start
 ```
 
 See **`docs/setup-guide.md`**'s "Fastest path" section for the full CLI
-reference (`start`/`stop`/`status`/`logs`/`uninstall-autostart`/`--help`).
+reference (`start`/`stop`/`status`/`logs`/`upgrade`/`uninstall-autostart`/`--help`).
 
 ## What's in this project
 
@@ -38,7 +38,7 @@ teamhub/
   db.ts, projects.ts, members.ts, messaging.ts, sprints.ts, tasks.ts, server.ts
     — the single MCP server (see docs/architecture.md)
 cli/
-  teamhub-cli.ts  — the `teamhub` command (install/start/stop/status/logs/autostart)
+  teamhub-cli.ts  — the `teamhub` command (install/start/stop/status/logs/upgrade/autostart)
 agents/
   runner.ts       — cross-platform (Windows/Mac/Linux) headless agent loop
 skills/
