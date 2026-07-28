@@ -42,6 +42,17 @@ describe("parseArgs", () => {
     });
   });
 
+  it("parses tester args", () => {
+    const args = parseArgs([
+      "--role", "tester",
+      "--project", "proj-x",
+      "--handle", "tester-1",
+      "--master-handle", "master-1",
+    ]);
+    expect(args.role).toBe("tester");
+    expect(args.cycle).toBe(30);
+  });
+
   it("parses an explicit --mode and --watchdog-interval", () => {
     const args = parseArgs([
       "--role", "developer",
@@ -151,6 +162,32 @@ describe("prompts", () => {
     });
     expect(prompt).toContain("master-1");
     expect(prompt).toContain("dev-A");
+  });
+
+  it("kickoffPrompt and cyclePrompt for tester mention testing/bugs, not just coding", () => {
+    const kickoff = kickoffPrompt({
+      role: "tester",
+      project: "proj-x",
+      handle: "tester-1",
+      masterHandle: "master-1",
+      cycle: 30,
+      mode: "manual",
+      watchdogInterval: 5,
+    });
+    expect(kickoff).toContain('role="tester"');
+    expect(kickoff).toContain("tester-1");
+
+    const cycle = cyclePrompt({
+      role: "tester",
+      project: "proj-x",
+      handle: "tester-1",
+      masterHandle: "master-1",
+      cycle: 30,
+      mode: "manual",
+      watchdogInterval: 5,
+    });
+    expect(cycle).toMatch(/bug/i);
+    expect(cycle).toContain("master-1");
   });
 
   it("redirectPrompt embeds the interrupt text and reads as an interruption", () => {

@@ -7,7 +7,7 @@ import { join } from "node:path";
 const execFileAsync = promisify(execFile);
 
 export interface RunnerArgs {
-  role: "master" | "developer";
+  role: "master" | "developer" | "tester";
   project: string;
   handle: string;
   masterHandle?: string;
@@ -24,8 +24,8 @@ export function parseArgs(argv: string[]): RunnerArgs {
       i++;
     }
   }
-  if (raw.role !== "master" && raw.role !== "developer") {
-    throw new Error(`--role must be "master" or "developer", got "${raw.role}"`);
+  if (raw.role !== "master" && raw.role !== "developer" && raw.role !== "tester") {
+    throw new Error(`--role must be "master", "developer", or "tester", got "${raw.role}"`);
   }
   if (!raw.project) throw new Error("--project is required");
   if (!raw.handle) throw new Error("--handle is required");
@@ -71,7 +71,9 @@ const ALLOWED_TOOLS_MASTER =
   "mcp__teamhub__add_comment,mcp__teamhub__interrupt_developer,mcp__teamhub__set_mode," +
   "mcp__github__*";
 
-const ALLOWED_TOOLS_DEVELOPER =
+// Shared by developer and tester roles — both need Read/Edit/Bash plus the
+// same reporting tools; only their prompts and skill guidance differ.
+const ALLOWED_TOOLS_WORKER =
   "mcp__teamhub__register,mcp__teamhub__send_message,mcp__teamhub__check_inbox," +
   "mcp__teamhub__report_status,mcp__teamhub__get_task,mcp__teamhub__update_task_status," +
   "mcp__teamhub__add_comment,mcp__teamhub__set_mode,mcp__github__*,Read,Edit,Bash";
@@ -80,12 +82,18 @@ export function kickoffPrompt(args: RunnerArgs): string {
   if (args.role === "master") {
     return `You are the Team Lead for project "${args.project}". Your handle is "${args.handle}". First, call the teamhub register tool with handle="${args.handle}", role="master", project_id="${args.project}". Then check your task tracker for open backlog items in this project and summarize them.`;
   }
+  if (args.role === "tester") {
+    return `You are a Tester on project "${args.project}". Your handle is "${args.handle}", your Team Lead's handle is "${args.masterHandle}". First, call the teamhub register tool with handle="${args.handle}", role="tester", project_id="${args.project}", mode="${args.mode}". Then check your inbox for an assigned test task.`;
+  }
   return `You are a Developer on project "${args.project}". Your handle is "${args.handle}", your Team Lead's handle is "${args.masterHandle}". First, call the teamhub register tool with handle="${args.handle}", role="developer", project_id="${args.project}", mode="${args.mode}". Then check your inbox for an assigned task.`;
 }
 
 export function cyclePrompt(args: RunnerArgs): string {
   if (args.role === "master") {
-    return `Check your teamhub inbox (handle="${args.handle}"). Answer any developer questions with send_message. Reflect any status updates in your task tracker. If a developer has no active task and there is ready backlog work, assign it with assign_task and notify_assignment.`;
+    return `Check your teamhub inbox (handle="${args.handle}"). Answer any developer or tester questions with send_message. Reflect any status updates in your task tracker. If a developer or tester has no active task and there is ready work for them, assign it with assign_task and notify_assignment.`;
+  }
+  if (args.role === "tester") {
+    return `Check your teamhub inbox (handle="${args.handle}"). If you have a new test task, pull the full details from your task tracker, run or write the tests, and file any bugs you find as comments or new tasks. Update the task status as you go, and call report_status with your test results so "${args.masterHandle}" is notified. If you're stuck, send_message to "${args.masterHandle}" and check back next cycle for a reply.`;
   }
   return `Check your teamhub inbox (handle="${args.handle}"). If you have a new task assignment, pull the full details from your task tracker, work the code, and push to GitHub. Update the task status as you go, and call report_status so "${args.masterHandle}" is notified. If you're stuck, send_message to "${args.masterHandle}" and check back next cycle for a reply.`;
 }
@@ -214,16 +222,16 @@ function teamhubUrlFromEnv(): string {
   return process.env.TEAMHUB_URL || `http://localhost:${process.env.TEAMHUB_PORT || 8787}/mcp`;
 }
 
-export async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
-  const allowedTools = args.role === "master" ? ALLOWED_TOOLS_MASTER : ALLOWED_TOOLS_DEVELOPER;
+export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const args = parseArgs(argv);
+  const allowedTools = args.role === "master" ? ALLOWED_TOOLS_MASTER : ALLOWED_TOOLS_WORKER;
   const permissionMode = permissionModeFor(args);
   const teamhubUrl = teamhubUrlFromEnv();
-  const watchdogEnabled = args.role === "developer" && args.mode === "auto";
+  const watchdogEnabled = args.role !== "master" && args.mode === "auto";
 
   console.log(
     `Starting ${args.role} (${args.handle}) on project ${args.project}` +
-      (args.role === "developer" ? ` [mode=${args.mode}]` : "") +
+      (args.role !== "master" ? ` [mode=${args.mode}]` : "") +
       "..."
   );
   await runCycle(kickoffPrompt(args), args.handle, allowedTools, permissionMode);

@@ -2,10 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
 
+export type Role = "master" | "developer" | "tester";
+
 export interface Member {
   handle: string;
   project_id: string;
-  role: "master" | "developer";
+  role: Role;
   status: string | null;
   last_seen: string;
   mode: "auto" | "manual";
@@ -18,7 +20,7 @@ function now(): string {
 export function registerMember(
   handle: string,
   project_id: string,
-  role: "master" | "developer",
+  role: Role,
   mode?: "auto" | "manual"
 ): Member {
   const ts = now();
@@ -67,10 +69,10 @@ export function setMemberMode(handle: string, mode: "auto" | "manual"): void {
 export function registerTools(server: McpServer): void {
   server.tool(
     "register",
-    "Register this session under a handle (e.g. 'master-1', 'dev-A') and role for a project, so other team members can reach it by name. Call this once at the start of a session. Optionally set mode: 'auto' (full auto-approval; the Lead can remotely interrupt and redirect this session's in-flight work — only meaningful when running headless via agents/runner.ts) or 'manual' (default; human-supervised, cannot be remotely interrupted). Omit mode to keep whatever was set previously (defaults to 'manual' on first registration).",
+    "Register this session under a handle (e.g. 'master-1', 'dev-A', 'tester-1') and role for a project, so other team members can reach it by name. Call this once at the start of a session. Roles: 'master' (Team Lead), 'developer' (writes code), 'tester' (pulls test tasks, runs/writes tests, reports bugs and results back to master). Optionally set mode: 'auto' (full auto-approval; the Lead can remotely interrupt and redirect this session's in-flight work — only meaningful when running headless via agents/runner.ts) or 'manual' (default; human-supervised, cannot be remotely interrupted). Omit mode to keep whatever was set previously (defaults to 'manual' on first registration).",
     {
       handle: z.string().describe("Unique short name for this session, e.g. dev-A"),
-      role: z.enum(["master", "developer"]),
+      role: z.enum(["master", "developer", "tester"]),
       project_id: z.string().describe("Project identifier shared by the whole team"),
       mode: z.enum(["auto", "manual"]).optional(),
     },

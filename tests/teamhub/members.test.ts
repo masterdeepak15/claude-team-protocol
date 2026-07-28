@@ -82,4 +82,13 @@ describe("members module", () => {
     registerMember("dev-z7", "proj-members-i", "developer");
     expect(getMember("dev-z7")?.mode).toBe("auto");
   });
+
+  it("registers a tester role", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, getMember } = await import("../../teamhub/members.js");
+    createProject("proj-members-j", "Members Project J", "PMJ");
+    const member = registerMember("tester-1", "proj-members-j", "tester");
+    expect(member.role).toBe("tester");
+    expect(getMember("tester-1")?.role).toBe("tester");
+  });
 });
