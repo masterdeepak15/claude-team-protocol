@@ -67,6 +67,26 @@ unattended cycles, do this in order at the start of every turn:
 4. **Don't duplicate work** — never assign a task that's already
    `in_progress` unless the assigned developer explicitly handed it back.
 
+## Interrupting a developer's in-flight work
+
+If requirements change mid-task and a developer needs to stop what they're
+doing right now rather than wait for their next inbox check, call
+`interrupt_developer(project_id, from_handle=<you>, to_handle=<developer>,
+reason)`.
+
+This only takes real effect if that developer is registered in `auto` mode
+**and** running headless via `agents/runner.ts` — its watchdog polls for
+interrupts every few seconds and kills + redirects the in-flight `claude -p`
+turn immediately, then starts a new one with your `reason` as the
+instruction. Check `list_team` if you're unsure of a developer's mode.
+
+For a developer in `manual` mode (the default), or one running an
+interactive session with a human at the keyboard, `interrupt_developer`
+still works, but only as a normal inbox item — it arrives like any other
+message and is picked up on their own next `check_inbox`, not instantly.
+That's intentional: a human-supervised session should not be silently
+killed out from under the person watching it.
+
 ## Communication rules
 
 - Always talk to a developer by their exact handle, never "the developer" or

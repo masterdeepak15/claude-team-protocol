@@ -19,6 +19,31 @@ nothing special is built for that; it's just your usual Claude Code session.
 - At the start of every session, call `register` with your handle,
   role="developer", and project_id, if you haven't already this session.
 
+## Operating mode: auto vs manual
+
+Every registration has a `mode`: `manual` (default) or `auto`. This is the
+human's choice, not yours to pick on your own — only set it when your human
+partner explicitly tells you to, either at registration
+(`register(..., mode="auto")`) or anytime after via
+`set_mode(handle, mode)`.
+
+- **`manual`** — you're supervised (interactively, or via a headless loop
+  where nobody's watching yet). The Lead's `interrupt_developer` calls just
+  arrive as a normal inbox item on your own next `check_inbox` — nothing
+  can stop you mid-turn.
+- **`auto`** — meaningful only when you're running headless via
+  `agents/runner.ts` with `--mode auto`: you're fully auto-approved
+  (`bypassPermissions`), and the runner's watchdog can kill and immediately
+  redirect your in-flight work if the Lead calls `interrupt_developer` on
+  you. If a cycle ends because you were interrupted, your very next
+  instruction will say so explicitly — stop pursuing whatever you were
+  doing before and follow it.
+- Setting `mode="auto"` while running interactively (a human at the
+  keyboard) only records the intent in TeamHub — it does not change how
+  Claude Code itself asks for tool approval in that session, and nothing
+  can remotely kill an interactive turn. Real auto-approval + interrupt
+  only happens through the headless runner.
+
 ## Core loop (each turn)
 
 Whether you're in an interactive session with a human watching, or running
