@@ -10,6 +10,15 @@ Every command below is `teamhub <command> [options]`. Run `teamhub --help`
 or `teamhub help` (or just `teamhub` with no arguments) for a shorter
 version of this same reference.
 
+> **Only need to connect to a server someone else is hosting — not run one
+> yourself?** Most Developer/Tester machines are in this position. Install
+> [`@masterdeepak15/teamhub-client`](https://www.npmjs.com/package/@masterdeepak15/teamhub-client)
+> instead — no server code, no SQLite, no native dependencies (that's what
+> actually causes Windows build failures). See `docs/setup-guide.md`'s
+> "Client-only machines" section and `teamhub-client/README.md` for its
+> commands (`connect`, `status`, `install`, `agent`, `help` — same shape as
+> below, minus everything about running the server itself).
+
 ---
 
 ## `install`

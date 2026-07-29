@@ -141,6 +141,36 @@ On every machine (the one running TeamHub, and every developer PC):
 
 Replace `192.168.1.20` with the TeamHub host's real LAN IP.
 
+### Step 3b — Client-only machines (most Developer/Tester PCs)
+
+If a machine only ever **connects to** TeamHub — never hosts it — install
+[`@masterdeepak15/teamhub-client`](https://www.npmjs.com/package/@masterdeepak15/teamhub-client)
+instead of the full `teamhub-cli`. It has no server code and, critically,
+**no native dependencies** — `better-sqlite3` (the actual cause of the
+Windows build failures covered earlier in this guide) never gets
+installed, since a client never touches SQLite at all.
+
+```bash
+npm install -g @masterdeepak15/teamhub-client
+
+# One-time: point at the server (verifies reachability, saves either way)
+teamhub-client connect 192.168.1.20:8787
+
+# From the project directory this machine will work on:
+teamhub-client install --skills --mcp
+```
+
+`install` uses the server you connected to — no need to repeat the URL.
+From here, everything else in this guide works identically: open `claude`
+interactively (Steps 4–5), or run headless (Step 6) via
+`teamhub-client agent --role ...` instead of `teamhub agent --role ...` —
+same flags, same behavior, just reads the connected server instead of
+defaulting to `localhost`.
+
+```bash
+teamhub-client status   # check connectivity anytime
+```
+
 ## Step 4 — Copy the skills
 
 Put `skills/team-lead`, `skills/team-developer`, `skills/tester`, and
@@ -251,7 +281,9 @@ teamhub agent --role tester --project bts-project --handle tester-1 --master-han
 ```
 
 (From a repo checkout instead, the equivalent is `npm run agent -- --role ...` —
-same underlying code, same cwd behavior, just invoked via npm scripts.)
+same underlying code, same cwd behavior, just invoked via npm scripts. On a
+client-only machine — see Step 3b — it's `teamhub-client agent --role ...`
+instead, reading the connected server rather than defaulting to `localhost`.)
 
 This requires `claude` on your `PATH` (same requirement as any Claude Code
 usage) and replaces the old bash + `jq` scripts — no extra dependencies are

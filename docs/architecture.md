@@ -74,14 +74,44 @@ time.
   skill installed, sees every tool call live, and can steer each turn.
 - **Headless (optional):** `agents/runner.ts` drives the same tool calls in
   an unattended loop via `claude -p --resume`, for overnight/unattended
-  work. Exposed two ways: `npm run agent --` from a repo checkout, or
-  `teamhub agent ...` from the globally-installed CLI package (no checkout
-  needed — see `cli/teamhub-cli.ts`, which dynamically imports the compiled
-  `dist/agents/runner.js` and forwards argv to its `main()`). Either way,
-  `process.cwd()` at invocation time is where the session-tracking file
-  lives **and** where the spawned `claude -p` process does its Read/Edit/
-  Bash work — `cd` into the actual target project first. See
-  `docs/setup-guide.md` for how to start either mode.
+  work. Exposed three ways: `npm run agent --` from a repo checkout,
+  `teamhub agent ...` from the globally-installed server CLI package, or
+  `teamhub-client agent ...` from the client-only package (see below) — all
+  three run the same underlying logic. Either way, `process.cwd()` at
+  invocation time is where the session-tracking file lives **and** where
+  the spawned `claude -p` process does its Read/Edit/Bash work — `cd` into
+  the actual target project first. See `docs/setup-guide.md` for how to
+  start any of these.
+
+## Server package vs. client package
+
+`@masterdeepak15/teamhub-cli` (this repo's root package) bundles the
+server (`teamhub/*.ts`, needs `better-sqlite3` and `express`) *and* the
+full CLI (`install`/`start`/`stop`/`status`/`logs`/`upgrade`/`uninstall`/
+`agent`) for whichever one machine hosts TeamHub. Every other machine —
+most Developer and Tester PCs — never runs the server or touches SQLite;
+they only need to spawn `claude` and talk to TeamHub over HTTP.
+
+`@masterdeepak15/teamhub-client` (`teamhub-client/` in this repo, its own
+independent `package.json`/`tsconfig.json`, published separately) covers
+exactly that case: `connect` (save a server URL), `status`, `install`
+(skills + `.mcp.json`, pointed at the connected server), and `agent` — the
+same runner logic (`teamhub-client/src/runner.ts`, ported from
+`agents/runner.ts`) but resolving its TeamHub URL from the saved
+connection instead of defaulting to `localhost`. It deliberately does
+**not** depend on `teamhub-cli`, so it never pulls in `better-sqlite3` —
+the actual source of the Windows native-module build failures this
+project has run into (missing prebuilds for new Node versions, V8 API
+mismatches, `node-gyp` requiring Visual Studio Build Tools). One
+unavoidable trade-off: `@modelcontextprotocol/sdk` itself bundles both
+client and server transport code, so `express`/`cors` still come along
+transitively — pure JS with no compilation step, so it doesn't cause the
+same class of problem, just some unused bundle weight.
+
+The two packages' skill copies (`skills/` at repo root vs.
+`teamhub-client/skills/`) are currently maintained as duplicates, kept in
+sync by hand — a shared skills-only package they both depend on would
+remove that duplication, but hasn't been built yet.
 
 ## Developer mode and interrupts
 

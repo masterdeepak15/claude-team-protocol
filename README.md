@@ -22,16 +22,29 @@ PC1: TeamHub host          PC2: Team Lead              PC3+: Developers
 
 ## Install
 
+**On the one machine that hosts TeamHub:**
+
 ```bash
 npm install -g @masterdeepak15/teamhub-cli
 teamhub install   # interactive: skills / .mcp.json / Claude Desktop / autostart
 teamhub start
 ```
 
-See **`docs/CLI.md`** for the full command reference (`install`/`start`/
-`stop`/`status`/`logs`/`agent`/`upgrade`/`uninstall`/`uninstall-autostart`/
-`--help`), or `docs/setup-guide.md`'s "Fastest path" section for a quicker
-overview.
+**On every other machine** (most Developer/Tester PCs — they only connect
+to TeamHub, never host it) — a separate, much lighter package with no
+server code and no native dependencies:
+
+```bash
+npm install -g @masterdeepak15/teamhub-client
+teamhub-client connect <teamhub-host-ip>:8787
+teamhub-client install --skills --mcp
+```
+
+See **`docs/CLI.md`** for the full server-side command reference
+(`install`/`start`/`stop`/`status`/`logs`/`agent`/`upgrade`/`uninstall`/
+`uninstall-autostart`/`--help`), `teamhub-client/README.md` for the client
+package, or `docs/setup-guide.md`'s "Fastest path" / "Client-only machines"
+sections for a quicker overview of both.
 
 ## What's in this project
 
@@ -43,6 +56,10 @@ cli/
   teamhub-cli.ts  — the `teamhub` command (install/start/stop/status/logs/upgrade/autostart)
 agents/
   runner.ts       — cross-platform (Windows/Mac/Linux) headless agent loop
+teamhub-client/
+  independent package (own package.json) — connect/status/install/agent
+  for machines that only connect to TeamHub, never host it; no server
+  code, no native dependencies (see docs/architecture.md)
 skills/
   team-lead/SKILL.md        — Team Lead behavior
   team-developer/SKILL.md   — Developer behavior
