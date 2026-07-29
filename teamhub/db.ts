@@ -1,8 +1,7 @@
 import Database from "better-sqlite3";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -75,8 +74,19 @@ function migrate(db: Database.Database): void {
   }
 }
 
+// Same convention as stateDir() in cli/teamhub-cli.ts — lives in the user's
+// home folder, NOT inside the installed package's dist/ folder. Storing it
+// under __dirname was the bug: that path sits inside node_modules for a
+// globally-installed package, and npm wipes/recreates that folder on every
+// reinstall or upgrade, deleting the database along with it.
+function defaultDbPath(): string {
+  const dataDir = join(homedir(), ".teamhub");
+  mkdirSync(dataDir, { recursive: true });
+  return join(dataDir, "teamhub.db.sqlite");
+}
+
 export function openDb(path?: string): Database.Database {
-  const dbPath = path ?? process.env.TEAMHUB_DB ?? join(__dirname, "teamhub.db.sqlite");
+  const dbPath = path ?? process.env.TEAMHUB_DB ?? defaultDbPath();
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
