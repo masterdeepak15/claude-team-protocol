@@ -150,7 +150,7 @@ describe("parseMeta", () => {
 describe("helpText", () => {
   it("mentions every command", () => {
     const text = helpText();
-    for (const cmd of ["install", "start", "stop", "status", "logs", "agent", "upgrade", "help"]) {
+    for (const cmd of ["install", "start", "stop", "status", "logs", "agent", "upgrade", "uninstall", "help"]) {
       expect(text).toContain(cmd);
     }
   });

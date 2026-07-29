@@ -207,6 +207,12 @@ Commands:
       whatever port/db it was last running with, unless you override with
       --port/--db. Safe to run even if TeamHub isn't currently running.
 
+  uninstall [--force]
+      Stop the running server, remove any auto-start registration, then
+      uninstall @masterdeepak15/teamhub-cli via npm. Your data (the SQLite
+      database) is kept by default. Pass --force to also delete it —
+      including a custom --db path used by \`start\`, if any.
+
   help, --help
       Show this text.
 `;
@@ -428,6 +434,53 @@ async function upgradeTeamhub(explicitPort: number | undefined, explicitDb: stri
   startServer(port, dbPath);
 }
 
+async function uninstallTeamhub(force: boolean): Promise<void> {
+  const meta = readMeta();
+
+  const pid = readPid();
+  if (pid && isProcessAlive(pid)) {
+    console.log("Stopping the running TeamHub server...");
+    stopServer();
+    await waitForExit(pid, 5000);
+  }
+
+  uninstallAutostart();
+
+  if (force) {
+    console.log("Removing TeamHub's data (--force)...");
+    // A custom --db path (if one was ever used) lives outside the package
+    // directory, so it survives `npm uninstall` unless removed explicitly.
+    if (meta.dbPath) {
+      for (const suffix of ["", "-wal", "-shm"]) {
+        rmSync(meta.dbPath + suffix, { force: true });
+      }
+    }
+    // pid/log/meta.json, and the default database if it was ever created
+    // at the default location under ~/.teamhub.
+    rmSync(stateDir(), { recursive: true, force: true });
+  } else {
+    console.log(
+      `Keeping TeamHub's data. Database: ${meta.dbPath ?? "(default — inside the installed package, removed along with it)"}`
+    );
+    console.log("Pass --force to also remove it.");
+  }
+
+  console.log("Uninstalling @masterdeepak15/teamhub-cli via npm...");
+  // Detached and not awaited on purpose: this CLI process is itself a file
+  // inside the package npm is about to remove. Waiting for npm inline here
+  // (like upgrade does) risks the same Windows file-lock problem fixed
+  // there, except worse — it'd be this process's *own* running script file,
+  // not a separate spawned server. Firing it detached and letting this
+  // process exit first (nothing else keeps the event loop alive once main()
+  // returns) avoids that entirely.
+  const child = crossSpawn("npm", ["uninstall", "-g", "@masterdeepak15/teamhub-cli"], {
+    detached: true,
+    stdio: "inherit",
+  });
+  child.unref();
+  console.log("TeamHub will finish uninstalling in the background momentarily.");
+}
+
 function showLogs(lines: number, follow: boolean): void {
   if (!existsSync(logFilePath())) {
     console.log("No log file yet — TeamHub hasn't been started with `teamhub start`.");
@@ -543,6 +596,9 @@ export async function main(argv: string[]): Promise<void> {
       await runAgent(rest);
       break;
     }
+    case "uninstall":
+      await uninstallTeamhub(flags.force === true);
+      break;
     case "help":
     case "--help":
     case undefined:
