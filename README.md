@@ -28,8 +28,10 @@ teamhub install   # interactive: skills / .mcp.json / Claude Desktop / autostart
 teamhub start
 ```
 
-See **`docs/setup-guide.md`**'s "Fastest path" section for the full CLI
-reference (`start`/`stop`/`status`/`logs`/`upgrade`/`uninstall-autostart`/`--help`).
+See **`docs/CLI.md`** for the full command reference (`install`/`start`/
+`stop`/`status`/`logs`/`agent`/`upgrade`/`uninstall`/`uninstall-autostart`/
+`--help`), or `docs/setup-guide.md`'s "Fastest path" section for a quicker
+overview.
 
 ## What's in this project
 
@@ -49,7 +51,7 @@ skills/
 scripts/
   migrate-legacy-to-teamhub.ts — one-time import from the old relay+planner setup
 docs/
-  architecture.md, setup-guide.md, skills-guide.md, migration.md,
+  CLI.md, architecture.md, setup-guide.md, skills-guide.md, migration.md,
   example-walkthrough.md, adopt-into-existing-project.md
 templates/
   CLAUDE.md — drop-in session conventions for a project adopting TeamHub

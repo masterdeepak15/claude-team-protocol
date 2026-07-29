@@ -164,6 +164,42 @@ Self-updates: stops the running server (if any), runs
 
 ---
 
+## `uninstall`
+
+```bash
+teamhub uninstall [--force]
+```
+
+Removes TeamHub from this machine.
+
+1. Stops the running server (if any).
+2. Removes any auto-start registration (same as `uninstall-autostart`).
+3. Uninstalls `@masterdeepak15/teamhub-cli` via a **detached, backgrounded**
+   `npm uninstall -g` call — this CLI process is itself a file inside the
+   package being removed, so the actual removal finishes a moment after
+   the command returns, not synchronously within it.
+
+**Your data is kept by default** — the SQLite database, and the state
+files under `~/.teamhub/` (pid, log, `teamhub.meta.json`). Pass `--force`
+to also delete it:
+
+- A custom `--db <path>` used by `start` (if any) is removed explicitly,
+  since it lives outside the package directory and would otherwise survive
+  the uninstall.
+- The default database (created next to the package's own files, if you
+  never passed `--db`) is removed automatically as part of removing the
+  package — nothing extra to do for that case.
+- The entire `~/.teamhub/` directory (pid/log/meta) is deleted.
+
+```bash
+teamhub uninstall            # keep the data, just remove the program
+teamhub uninstall --force    # remove the program AND all its data
+```
+
+To reinstall later: `npm install -g @masterdeepak15/teamhub-cli@latest`.
+
+---
+
 ## `uninstall-autostart`
 
 ```bash

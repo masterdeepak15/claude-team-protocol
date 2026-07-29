@@ -32,9 +32,9 @@
     "dist/**/*.css",
     "skills",
     "templates",
+    "docs/CLI.md",
     "LICENSE",
-    "README.md",
-    "CLI.md"
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"
