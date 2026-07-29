@@ -9,6 +9,7 @@ import * as members from "./members.js";
 import * as messaging from "./messaging.js";
 import * as sprints from "./sprints.js";
 import * as tasks from "./tasks.js";
+import * as gate from "./gate.js";
 import { buildApiRouter } from "./api.js";
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ export function buildServer(): McpServer {
   messaging.registerTools(server);
   sprints.registerTools(server);
   tasks.registerTools(server);
+  gate.registerTools(server);
   return server;
 }
 

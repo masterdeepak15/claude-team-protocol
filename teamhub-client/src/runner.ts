@@ -245,6 +245,32 @@ export async function pollForInterrupt(teamhubMcpUrl: string, handle: string): P
   }
 }
 
+// Same idea as pollForInterrupt: talks to TeamHub directly over MCP, no
+// Claude spawn, no tokens. Called once per sleep interval in the main loop
+// to decide whether a real (token-costing) cycle is worth running at all.
+export async function pollForPendingWork(
+  teamhubMcpUrl: string,
+  role: "master" | "developer" | "tester",
+  handle: string,
+  project: string
+): Promise<boolean> {
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+  const client = new Client({ name: "teamhub-client-gate", version: "1.0.0" });
+  const transport = new StreamableHTTPClientTransport(new URL(teamhubMcpUrl));
+  await client.connect(transport);
+  try {
+    const result = await client.callTool({
+      name: "has_pending_work",
+      arguments: { role, handle, project_id: project },
+    });
+    const content = (result.content as Array<{ type: string; text?: string }> | undefined)?.[0];
+    return content?.text === "pending";
+  } finally {
+    await client.close();
+  }
+}
+
 // Resolution order: explicit TEAMHUB_URL env var, then the server
 // `teamhub-client connect` stored — unlike the server package's own
 // runner (which can safely default to localhost, since server and agent
@@ -277,6 +303,11 @@ export async function main(argv: string[]): Promise<void> {
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, args.cycle * 1000));
     try {
+      const pending = await pollForPendingWork(url, args.role, args.handle, args.project);
+      if (!pending) {
+        console.log(`${args.handle}: idle, nothing pending — skipping this cycle (no tokens used).`);
+        continue;
+      }
       if (watchdogEnabled) {
         const outcome = await runInterruptibleCycle(
           cyclePrompt(args),
