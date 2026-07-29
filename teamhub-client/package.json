@@ -1,0 +1,50 @@
+{
+  "name": "@masterdeepak15/teamhub-client",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "TeamHub Client — connect to a remote TeamHub server and run Team Lead/Developer/Tester Claude Code sessions (interactive or headless) from any machine. No server code, no native dependencies — just point it at a server's IP:port.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "multi-agent",
+    "team",
+    "cli",
+    "client"
+  ],
+  "homepage": "https://github.com/masterdeepak15/claude-team-protocol",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/masterdeepak15/claude-team-protocol.git",
+    "directory": "teamhub-client"
+  },
+  "bin": {
+    "teamhub-client": "dist/cli.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "skills",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cross-spawn": "^7.0.6"
+  }
+}
