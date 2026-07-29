@@ -177,7 +177,7 @@ abstraction.
 
 `GET /` on the same Express app (same port as `/mcp` and `/health`, no new
 process or firewall rule) serves a browser dashboard — sidebar + topbar
-layout with five views:
+layout with six views:
 
 - **Dashboard** — task-status stat cards, active sprint, full team roster.
 - **Board** — a Jira-like Kanban across all six task statuses.
@@ -186,6 +186,12 @@ layout with five views:
 - **Messages** — pick a member, see the full conversation thread with them
   (not just unread — see below), reply as whichever registered handle you
   choose in the "Acting as" picker.
+- **Chat Room** — every message in the project, from every member pair, in
+  one combined feed (each sender color-coded), instead of picking a single
+  1:1 thread. Reuses the exact same data (`listMessages` with no handle
+  filter) and the exact same SSE stream as every other view — no WebSocket,
+  no new port, no new plumbing at all, just a different way of rendering
+  what was already being pushed to the browser.
 
 **Architecture:**
 

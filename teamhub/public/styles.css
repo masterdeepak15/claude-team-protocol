@@ -592,6 +592,70 @@ button:hover {
   min-width: 0;
 }
 
+/* ---------- Chat Room (combined, color-coded, whole-project feed) ---------- */
+
+.chatroom-layout {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-height) - 40px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.chatroom-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.room-bubble {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 85%;
+}
+
+.room-avatar {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.room-body {
+  background: var(--bg-elevated-2);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  min-width: 0;
+}
+
+.room-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.room-sender {
+  font-weight: 700;
+}
+
+.room-text {
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 900px) {

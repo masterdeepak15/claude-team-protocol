@@ -126,7 +126,7 @@ function connectEvents() {
 }
 
 function renderView() {
-  const titles = { dashboard: "Dashboard", board: "Board", sprints: "Sprints", team: "Team", messages: "Messages" };
+  const titles = { dashboard: "Dashboard", board: "Board", sprints: "Sprints", team: "Team", messages: "Messages", chatroom: "Chat Room" };
   viewTitle.textContent = titles[state.currentView] || "TeamHub";
 
   if (!state.currentProjectId) {
@@ -145,6 +145,8 @@ function renderView() {
       return renderTeam();
     case "messages":
       return renderMessages();
+    case "chatroom":
+      return renderChatRoom();
     default:
       return renderDashboard();
   }
@@ -381,6 +383,95 @@ async function renderMessages() {
     textInput.value = "";
     await renderMessages();
   });
+}
+
+// Combined project-wide timeline — every message between every pair of
+// members, in one feed, each sender color-coded consistently. Unlike
+// renderMessages (a 1:1 thread you pick), this is the "whole room at once"
+// view. Real-time comes for free: connectEvents() already re-renders
+// whatever view is active on any "message" change over the existing SSE
+// stream, so no extra wiring is needed here for live updates.
+async function renderChatRoom() {
+  content.innerHTML = `
+    <div class="chatroom-layout">
+      <div class="chatroom-messages" id="chatroomMessages"></div>
+      <form class="composer" id="chatroomComposer">
+        <select id="chatroomFrom" aria-label="Send as"></select>
+        <select id="chatroomTo" aria-label="Send to"></select>
+        <input type="text" id="chatroomText" placeholder="Type a message…" autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  `;
+
+  const fromSelect = document.getElementById("chatroomFrom");
+  const toSelect = document.getElementById("chatroomTo");
+  const options = state.members
+    .map((m) => `<option value="${escapeHtml(m.handle)}">${escapeHtml(m.handle)}</option>`)
+    .join("");
+  fromSelect.innerHTML = options;
+  toSelect.innerHTML = options;
+  if (state.identity && state.members.some((m) => m.handle === state.identity)) {
+    fromSelect.value = state.identity;
+  }
+
+  const feedEl = document.getElementById("chatroomMessages");
+  try {
+    const messages = await api.listMessages(state.currentProjectId);
+    feedEl.innerHTML = messages.length
+      ? messages.map((m) => roomBubble(m)).join("")
+      : `<p class="empty small">No messages yet on this project.</p>`;
+    feedEl.scrollTop = feedEl.scrollHeight;
+  } catch (err) {
+    feedEl.innerHTML = `<p class="empty small">Couldn't load messages: ${escapeHtml(String(err.message || err))}</p>`;
+  }
+
+  document.getElementById("chatroomComposer").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const from = fromSelect.value;
+    const to = toSelect.value;
+    const textInput = document.getElementById("chatroomText");
+    const text = textInput.value.trim();
+    if (!text || !from || !to) return;
+    await api.sendMessage(state.currentProjectId, from, to, text);
+    state.identity = from;
+    localStorage.setItem("teamhub-identity", from);
+    textInput.value = "";
+    await renderChatRoom();
+  });
+}
+
+// Deterministic handle -> color, so the same member always gets the same
+// avatar color across renders/sessions (no stored color assignment needed).
+function hashColor(handle) {
+  let hash = 0;
+  for (let i = 0; i < handle.length; i++) {
+    hash = (hash << 5) - hash + handle.charCodeAt(i);
+    hash |= 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 60%, 45%)`;
+}
+
+function initials(handle) {
+  const parts = handle.split(/[-_\s]/).filter(Boolean);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || handle.slice(0, 2).toUpperCase();
+}
+
+function roomBubble(m) {
+  const color = hashColor(m.from_handle);
+  return `
+    <div class="room-bubble">
+      <div class="room-avatar" style="background:${color}">${escapeHtml(initials(m.from_handle))}</div>
+      <div class="room-body">
+        <div class="room-meta">
+          <span class="room-sender" style="color:${color}">${escapeHtml(m.from_handle)}</span>
+          → ${escapeHtml(m.to_handle)} · ${formatTime(m.ts)} · ${escapeHtml(m.type)}
+        </div>
+        <div class="room-text">${escapeHtml(m.text)}</div>
+      </div>
+    </div>
+  `;
 }
 
 function messageBubble(m, viewerHandle) {
