@@ -118,13 +118,17 @@ You get:
 - **Sprints** — every sprint with its tasks.
 - **Team** — every registered member, their role/mode, and a "Message" button.
 - **Messages** — pick any member, see your full conversation history with
-  them (not just what's unread), and reply — choose which registered
-  handle to send as via the "Acting as" picker in the top bar.
+  them (not just what's unread), and reply as **Owner** — the reserved
+  dashboard-operator identity (not a real agent handle, can't be registered
+  as one, can't message itself).
+- **Chat Room** — every message in the project, from every member pair, in
+  one combined, color-coded, real-time feed, instead of picking a single
+  1:1 thread. Reply as Owner here too, addressed to whichever member you pick.
 
 This is a convenience for humans, not a new access-control layer — same
 no-auth trust model as the rest of TeamHub. Anyone who can reach the port
-can open the dashboard and reply as any handle, same as they already could
-via `send_message`.
+can open the dashboard and send messages as Owner, same as they already
+could via `send_message`.
 
 ## Step 3 — Point every machine's `.mcp.json` at the TeamHub host
 

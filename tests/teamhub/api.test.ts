@@ -133,6 +133,18 @@ describe("teamhub API router", () => {
       body: JSON.stringify({ project_id: "proj-api-e", from_handle: "master-1" }),
     });
     expect(badRes.status).toBe(400);
+
+    const selfRes = await fetch(`http://127.0.0.1:${started.port}/api/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: "proj-api-e",
+        from_handle: "master-1",
+        to_handle: "master-1",
+        text: "talking to myself",
+      }),
+    });
+    expect(selfRes.status).toBe(400);
   });
 
   it("GET /api/events streams a change as an SSE data line", async () => {

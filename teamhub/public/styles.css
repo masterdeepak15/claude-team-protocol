@@ -587,6 +587,17 @@ button:hover {
   flex: 0 0 140px;
 }
 
+.composer-from {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
 .composer input {
   flex: 1;
   min-width: 0;

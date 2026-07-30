@@ -102,3 +102,10 @@ describe("messaging module", () => {
     expect(forDevH.every((m) => m.from_handle === "dev-H" || m.to_handle === "dev-H")).toBe(true);
   });
 });
+
+describe("self-message guard", () => {
+  it("rejects sendMessage when from_handle equals to_handle", async () => {
+    const { sendMessage } = await import("../../teamhub/messaging.js");
+    expect(() => sendMessage("proj-msg-self", "master-1", "master-1", "talking to myself")).toThrow();
+  });
+});

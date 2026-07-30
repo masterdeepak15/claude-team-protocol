@@ -92,3 +92,14 @@ describe("members module", () => {
     expect(getMember("tester-1")?.role).toBe("tester");
   });
 });
+
+describe("reserved owner handle", () => {
+  it("rejects registering the reserved OWNER_HANDLE, case-insensitively", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember } = await import("../../teamhub/members.js");
+    createProject("proj-members-owner", "Members Project Owner", "PMO");
+    expect(() => registerMember("owner", "proj-members-owner", "developer")).toThrow();
+    expect(() => registerMember("Owner", "proj-members-owner", "developer")).toThrow();
+    expect(() => registerMember("OWNER", "proj-members-owner", "master")).toThrow();
+  });
+});

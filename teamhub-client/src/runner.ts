@@ -128,7 +128,8 @@ function spawnClaude(
   const resumeArgs = existsSync(file) ? ["--resume", readFileSync(file, "utf-8").trim()] : [];
   const child: ChildProcess = crossSpawn(
     claudeCommand(),
-    ["-p", prompt, ...resumeArgs, "--allowedTools", allowedTools, "--permission-mode", permissionMode, "--output-format", "json"]
+    ["-p", prompt, ...resumeArgs, "--allowedTools", allowedTools, "--permission-mode", permissionMode, "--output-format", "json"],
+    { stdio: ["ignore", "pipe", "pipe"] }
   );
 
   let stdout = "";
@@ -156,7 +157,11 @@ function spawnClaude(
 
 function finishCycle(stdout: string, handle: string): void {
   const parsed = JSON.parse(stdout);
-  if (parsed.result) console.log(parsed.result);
+  if (parsed.result) {
+    console.log(parsed.result);
+  } else {
+    console.log(`[${handle}] cycle finished (no summary text returned by this turn).`);
+  }
   if (parsed.session_id) writeFileSync(sessionFile(handle), parsed.session_id);
 }
 
@@ -298,7 +303,33 @@ export async function main(argv: string[]): Promise<void> {
       (args.role !== "master" ? ` [mode=${args.mode}]` : "") +
       ` via ${url} ...`
   );
-  await runCycle(kickoffPrompt(args), args.handle, allowedTools, permissionMode);
+
+  // Same preflight as the server package's runner: Claude Code discovers
+  // .mcp.json from the current working directory, and nothing here passes
+  // an explicit --mcp-config. Wrong cwd is the most common reason a
+  // headless agent looks stuck doing nothing.
+  if (!existsSync(join(process.cwd(), ".mcp.json"))) {
+    console.warn(
+      `Warning: no .mcp.json found in ${process.cwd()}. ` +
+        `Claude Code discovers MCP servers from the current directory — ` +
+        `if teamhub/github aren't configured globally, cd into the ` +
+        `project directory that has .mcp.json before running this command.`
+    );
+  }
+
+  console.log(`Waiting for the first response from Claude — this can take a little while...`);
+  try {
+    await runCycle(kickoffPrompt(args), args.handle, allowedTools, permissionMode);
+  } catch (err) {
+    console.error(
+      `Initial registration cycle failed for ${args.handle}. Common causes: ` +
+        `"claude" not on PATH, not logged in (run "claude /login"), or the ` +
+        `MCP servers this needs (see the .mcp.json warning above, if any) ` +
+        `aren't reachable. Underlying error:`,
+      err
+    );
+    throw err;
+  }
 
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, args.cycle * 1000));

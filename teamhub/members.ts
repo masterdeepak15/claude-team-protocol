@@ -5,6 +5,12 @@ import { emitChange } from "./events.js";
 
 export type Role = "master" | "developer" | "tester";
 
+// Reserved for the human dashboard operator (see teamhub/public — the
+// "Acting as: Owner" identity that sends dashboard-composed messages). Not
+// a real agent, never registered as a member, so it can never collide with
+// an actual handle and never appears in list_team/listTeam.
+export const OWNER_HANDLE = "owner";
+
 export interface Member {
   handle: string;
   project_id: string;
@@ -24,6 +30,11 @@ export function registerMember(
   role: Role,
   mode?: "auto" | "manual"
 ): Member {
+  if (handle.trim().toLowerCase() === OWNER_HANDLE) {
+    throw new Error(
+      `"${OWNER_HANDLE}" is reserved for the human dashboard operator and can't be registered as an agent handle.`
+    );
+  }
   const ts = now();
   db.prepare(
     `INSERT INTO members (handle, project_id, role, status, last_seen, mode)

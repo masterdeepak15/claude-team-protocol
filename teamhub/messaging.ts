@@ -61,6 +61,11 @@ export function sendMessage(
   to_handle: string,
   text: string
 ): Message {
+  if (from_handle === to_handle) {
+    throw new Error(
+      `from_handle and to_handle can't both be "${from_handle}" — a member can't message itself.`
+    );
+  }
   const msg: Message = {
     id: randomUUID(),
     project_id,

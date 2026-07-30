@@ -1,5 +1,14 @@
 import { api, subscribeEvents } from "./api.js";
 
+// Reserved handle for the human dashboard operator — never a registered
+// agent (the server rejects registering this handle; see
+// teamhub/members.ts). Every message composed in this UI is sent as this
+// fixed identity, talking to a real member. This is deliberate, not a
+// missing feature: letting "from" be any registered handle (as it used to
+// be) made it possible to pick the same handle for both "from" and "to"
+// and send a message to itself.
+const OWNER_HANDLE = "owner";
+
 const TASK_STATUSES = ["backlog", "todo", "in_progress", "in_review", "done", "blocked"];
 const STATUS_LABELS = {
   backlog: "Backlog",
@@ -18,14 +27,12 @@ const state = {
   sprints: [],
   tasks: [],
   selectedMemberHandle: null,
-  identity: localStorage.getItem("teamhub-identity") || "",
   eventsUnsub: null,
 };
 
 const content = document.getElementById("content");
 const viewTitle = document.getElementById("viewTitle");
 const projectSelect = document.getElementById("projectSelect");
-const identitySelect = document.getElementById("identitySelect");
 const connDot = document.getElementById("connDot");
 
 async function init() {
@@ -70,24 +77,6 @@ async function loadProjectData() {
   state.members = members;
   state.sprints = sprints;
   state.tasks = tasks;
-  renderIdentityPicker();
-}
-
-function renderIdentityPicker() {
-  const handles = state.members.map((m) => m.handle);
-  identitySelect.innerHTML = handles
-    .map((h) => `<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)
-    .join("");
-  if (state.identity && handles.includes(state.identity)) {
-    identitySelect.value = state.identity;
-  } else if (handles.length) {
-    state.identity = handles[0];
-    identitySelect.value = state.identity;
-  }
-  identitySelect.onchange = () => {
-    state.identity = identitySelect.value;
-    localStorage.setItem("teamhub-identity", state.identity);
-  };
 }
 
 function wireNav() {
@@ -335,7 +324,7 @@ async function renderMessages() {
       <div class="thread">
         <div class="thread-messages" id="threadMessages"></div>
         <form class="composer" id="composer">
-          <select id="composerFrom" aria-label="Send as"></select>
+          <span class="composer-from">Owner →</span>
           <input type="text" id="composerText" placeholder="Type a reply…" autocomplete="off" />
           <button type="submit">Send</button>
         </form>
@@ -350,20 +339,12 @@ async function renderMessages() {
     });
   });
 
-  const fromSelect = document.getElementById("composerFrom");
-  fromSelect.innerHTML = state.members
-    .map((m) => `<option value="${escapeHtml(m.handle)}">${escapeHtml(m.handle)}</option>`)
-    .join("");
-  if (state.identity && state.members.some((m) => m.handle === state.identity)) {
-    fromSelect.value = state.identity;
-  }
-
   const threadEl = document.getElementById("threadMessages");
   if (state.selectedMemberHandle) {
     try {
       const messages = await api.listMessages(state.currentProjectId, state.selectedMemberHandle);
       threadEl.innerHTML = messages.length
-        ? messages.map((m) => messageBubble(m, fromSelect.value)).join("")
+        ? messages.map((m) => messageBubble(m, OWNER_HANDLE)).join("")
         : `<p class="empty small">No messages yet with ${escapeHtml(state.selectedMemberHandle)}.</p>`;
       threadEl.scrollTop = threadEl.scrollHeight;
     } catch (err) {
@@ -373,13 +354,10 @@ async function renderMessages() {
 
   document.getElementById("composer").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const from = fromSelect.value;
     const textInput = document.getElementById("composerText");
     const text = textInput.value.trim();
-    if (!text || !state.selectedMemberHandle || !from) return;
-    await api.sendMessage(state.currentProjectId, from, state.selectedMemberHandle, text);
-    state.identity = from;
-    localStorage.setItem("teamhub-identity", from);
+    if (!text || !state.selectedMemberHandle) return;
+    await api.sendMessage(state.currentProjectId, OWNER_HANDLE, state.selectedMemberHandle, text);
     textInput.value = "";
     await renderMessages();
   });
@@ -396,7 +374,7 @@ async function renderChatRoom() {
     <div class="chatroom-layout">
       <div class="chatroom-messages" id="chatroomMessages"></div>
       <form class="composer" id="chatroomComposer">
-        <select id="chatroomFrom" aria-label="Send as"></select>
+        <span class="composer-from">Owner →</span>
         <select id="chatroomTo" aria-label="Send to"></select>
         <input type="text" id="chatroomText" placeholder="Type a message…" autocomplete="off" />
         <button type="submit">Send</button>
@@ -404,16 +382,10 @@ async function renderChatRoom() {
     </div>
   `;
 
-  const fromSelect = document.getElementById("chatroomFrom");
   const toSelect = document.getElementById("chatroomTo");
-  const options = state.members
+  toSelect.innerHTML = state.members
     .map((m) => `<option value="${escapeHtml(m.handle)}">${escapeHtml(m.handle)}</option>`)
     .join("");
-  fromSelect.innerHTML = options;
-  toSelect.innerHTML = options;
-  if (state.identity && state.members.some((m) => m.handle === state.identity)) {
-    fromSelect.value = state.identity;
-  }
 
   const feedEl = document.getElementById("chatroomMessages");
   try {
@@ -428,14 +400,11 @@ async function renderChatRoom() {
 
   document.getElementById("chatroomComposer").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const from = fromSelect.value;
     const to = toSelect.value;
     const textInput = document.getElementById("chatroomText");
     const text = textInput.value.trim();
-    if (!text || !from || !to) return;
-    await api.sendMessage(state.currentProjectId, from, to, text);
-    state.identity = from;
-    localStorage.setItem("teamhub-identity", from);
+    if (!text || !to) return;
+    await api.sendMessage(state.currentProjectId, OWNER_HANDLE, to, text);
     textInput.value = "";
     await renderChatRoom();
   });
@@ -458,14 +427,20 @@ function initials(handle) {
   return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || handle.slice(0, 2).toUpperCase();
 }
 
+function colorFor(handle) {
+  if (handle === OWNER_HANDLE) return "var(--accent)";
+  return hashColor(handle);
+}
+
 function roomBubble(m) {
-  const color = hashColor(m.from_handle);
+  const color = colorFor(m.from_handle);
+  const label = m.from_handle === OWNER_HANDLE ? "Owner" : m.from_handle;
   return `
     <div class="room-bubble">
-      <div class="room-avatar" style="background:${color}">${escapeHtml(initials(m.from_handle))}</div>
+      <div class="room-avatar" style="background:${color}">${escapeHtml(initials(label))}</div>
       <div class="room-body">
         <div class="room-meta">
-          <span class="room-sender" style="color:${color}">${escapeHtml(m.from_handle)}</span>
+          <span class="room-sender" style="color:${color}">${escapeHtml(label)}</span>
           → ${escapeHtml(m.to_handle)} · ${formatTime(m.ts)} · ${escapeHtml(m.type)}
         </div>
         <div class="room-text">${escapeHtml(m.text)}</div>

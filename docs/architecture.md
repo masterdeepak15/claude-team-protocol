@@ -184,8 +184,9 @@ layout with six views:
 - **Sprints** — every sprint with its tasks.
 - **Team** — member cards (role/mode badges), click through to message them.
 - **Messages** — pick a member, see the full conversation thread with them
-  (not just unread — see below), reply as whichever registered handle you
-  choose in the "Acting as" picker.
+  (not just unread — see below), reply as the fixed **Owner** identity (see
+  below — this replaced an earlier "Acting as" picker that let you send as
+  any registered handle, including the same one you were replying to).
 - **Chat Room** — every message in the project, from every member pair, in
   one combined feed (each sender color-coded), instead of picking a single
   1:1 thread. Reuses the exact same data (`listMessages` with no handle
@@ -215,10 +216,19 @@ layout with six views:
   Served via `express.static()`; `scripts/copy-public-assets.mjs` copies it
   into `dist/teamhub/public/` as a build step, since `tsc` only compiles
   `.ts` files and won't touch static assets on its own.
-- **No auth, same as everything else here** — the "Acting as" picker in
-  Messages just lets you choose which registered handle a reply is sent
-  from; it's a convenience for a human at the dashboard, not an identity
-  system. Any dynamic value from the database (message text, task titles,
-  comments — fields an unauthenticated MCP caller could set) is escaped
+- **The Owner identity, and why self-messaging was a bug** — every message
+  composed from the dashboard (Messages or Chat Room) is sent from the
+  reserved handle `owner` (`teamhub/members.ts` rejects registering it as a
+  real agent, so it can never collide with one). Earlier, the "from" field
+  was just another dropdown of real handles, so nothing stopped picking the
+  same handle for "from" and "to" — a message from a member to itself.
+  `messaging.sendMessage` now rejects `from_handle === to_handle` outright
+  (used by both the REST route and the `send_message` MCP tool), and the UI
+  no longer offers a "from" choice at all — you're always Owner, talking to
+  a real member.
+- **No auth, same as everything else here** — the Owner identity is a
+  dashboard convenience, not a real auth system. Any dynamic value from the
+  database (message text, task titles, comments — fields an unauthenticated
+  MCP caller could set) is escaped
   before being inserted into the page, since XSS is otherwise possible in
   this no-auth model.

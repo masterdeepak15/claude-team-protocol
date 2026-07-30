@@ -65,6 +65,10 @@ export function buildApiRouter(): Router {
       res.status(400).json({ error: "project_id, from_handle, to_handle, and text are all required" });
       return;
     }
+    if (from_handle === to_handle) {
+      res.status(400).json({ error: "from_handle and to_handle can't be the same — a member can't message itself." });
+      return;
+    }
     const message = messaging.sendMessage(project_id, from_handle, to_handle, text);
     res.status(201).json(message);
   });
