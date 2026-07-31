@@ -149,8 +149,84 @@ never something a session decides for itself.
 For a `manual`-mode Developer, or any interactive session regardless of its
 recorded `mode`, `interrupt_developer` just inserts a normal `interrupt`-type
 row that shows up in that handle's next ordinary `check_inbox` call — there
-is no remote-kill capability, by design, whenever a human is (or might be)
-directly supervising that session.
+is no remote-kill capability, by design, whenever Owner (or another human)
+is (or might be) directly supervising that session.
+
+Auto mode is not "fully unattended forever" mode, and it's worth being
+precise about what it does and doesn't change:
+
+- It changes whether the Lead can interrupt a cycle mid-flight (above).
+- It does **not** change whether cycles run at all — both modes loop
+  forever on the same `--cycle` interval once started via
+  `agents/runner.ts`. See "The idle gate" below for what actually decides
+  whether a given cycle does anything.
+- It does **not** relax the reply requirement in "Always reply to the
+  sender" below — a message from the Lead or from Owner still needs an
+  answer regardless of mode.
+
+## The idle gate — cheap enough to poll forever, not just on messages
+
+Every headless cycle (`agents/runner.ts` / `teamhub-client/src/runner.ts`,
+both packages, identical logic) is gated by `has_pending_work` — a plain DB
+read exposed as an MCP tool (`teamhub/gate.ts`), called directly over MCP
+with **no `claude` process spawned and no tokens spent**:
+
+- Master: pending if there's any unread message, **or** any backlog/todo
+  task with no assignee yet.
+- Developer/Tester: pending if there's any unread message, **or** any task
+  already assigned to that handle whose status isn't `done`/`blocked`.
+
+That second condition for Developer/Tester matters more than it looks: a
+developer who picked up a task in one cycle but didn't finish it, with no
+*new* message arriving on a later cycle, still needs to keep working on it.
+Gating purely on unread messages (an earlier version of this) meant that
+once the original `task_assignment` message had been read, the gate would
+report "idle" forever regardless of the task's actual status — the
+developer would never resume it on its own. Checking their own active work
+alongside messages closes that gap.
+
+When the gate reports nothing pending, the runner logs `idle, nothing
+pending — skipping this cycle (no tokens used)` and goes straight back to
+sleep — no `claude -p` spawned, no AI cost, for as long as it stays quiet.
+The moment either condition becomes true, the very next poll spawns a real
+cycle.
+
+## Live console output during a cycle
+
+Cycles run with `--output-format stream-json --verbose` (not plain `json`)
+specifically so a headless/auto-mode session's console shows what it's
+actually doing turn by turn — each tool call and each assistant message —
+instead of only a single summary line once the whole cycle finishes.
+`agents/runner.ts`'s `logStreamEvent` reads the resulting NDJSON stream one
+line at a time as it arrives and prints:
+
+- `[handle] → calling <tool_name>(<truncated args>)` for every tool call
+- `[handle] <truncated assistant text>` for every piece of reasoning/reply
+  text the model produces
+- `[handle] session started (model: ...)` once, from the stream's `init`
+  event
+
+`tool_result` events and other `system` subtypes are deliberately not
+printed — the tool-call line already shows what was invoked, and the
+model's next text block usually summarizes the outcome, so this stays a
+readable progress log rather than a full raw transcript dump. The final
+`result` event (same shape `--output-format json` used to return directly)
+is still what gets parsed for the summary text and the `session_id` used to
+`--resume` the next cycle — this is a change to *how much you see while a
+cycle runs*, not to the session/resume mechanics themselves.
+
+## Always reply to the sender
+
+Every role's cycle prompt (`kickoffPrompt`/`cyclePrompt` in both runner
+packages, and the matching `SKILL.md` files) is explicit: any unread
+message — from the Lead, a Developer, a Tester, or **Owner** directly —
+must get an actual `send_message`/`report_status` reply before the turn
+ends, even a short one. This exists because of a real failure mode: a
+session can read a message, act on it, and still never tell the sender
+anything happened — from the sender's side, that's indistinguishable from
+the message having been ignored entirely. It's most likely to bite Owner
+specifically, since in auto mode there's often no one watching the console
+in the moment to notice a question went unanswered.
 
 ## HTTP surface
 

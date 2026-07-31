@@ -109,3 +109,26 @@ describe("self-message guard", () => {
     expect(() => sendMessage("proj-msg-self", "master-1", "master-1", "talking to myself")).toThrow();
   });
 });
+
+describe("checkInbox atomicity", () => {
+  it("only returns and consumes messages that existed at call time, in chronological order", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { sendMessage, checkInbox } = await import("../../teamhub/messaging.js");
+    createProject("proj-msg-atomic", "Atomic Project", "PMA");
+    sendMessage("proj-msg-atomic", "master-1", "dev-atomic", "first");
+    sendMessage("proj-msg-atomic", "master-1", "dev-atomic", "second");
+    const inbox = checkInbox("dev-atomic");
+    expect(inbox.map((m) => m.text)).toEqual(["first", "second"]);
+    expect(inbox.every((m) => m.read)).toBe(true);
+    expect(checkInbox("dev-atomic")).toHaveLength(0);
+  });
+});
+
+describe("reportStatus requires a registered master", () => {
+  it("throws instead of silently addressing a nonexistent master handle", async () => {
+    const { reportStatus } = await import("../../teamhub/messaging.js");
+    expect(() =>
+      reportStatus("proj-msg-no-master", "dev-A", "PROJ-1", "done", "finished it")
+    ).toThrow(/no master/i);
+  });
+});

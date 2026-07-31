@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
 import * as projects from "./projects.js";
 import * as members from "./members.js";
 import * as sprints from "./sprints.js";
@@ -86,17 +87,49 @@ export function buildApiRouter(): Router {
     const projectFilter = typeof req.query.project_id === "string" ? req.query.project_id : undefined;
     const unsubscribe = onChange((event) => {
       if (projectFilter && event.project_id !== projectFilter) return;
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      try {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      } catch {
+        // Client likely disconnected in the instant before the 'close'
+        // handler below fired. res.write() on a dead socket can throw
+        // synchronously, and EventEmitter.emit() re-throws listener
+        // exceptions synchronously — left unguarded, one stale dashboard
+        // tab could break emitChange() for every other in-flight caller
+        // (an unrelated MCP tool call happening at the same moment).
+      }
     });
 
     // Keep intermediary proxies/load balancers from timing out an idle
     // connection; also doubles as a lightweight liveness signal client-side.
-    const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 25000);
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(": heartbeat\n\n");
+      } catch {
+        // Same reasoning as above — an uncaught throw inside a setInterval
+        // callback becomes an uncaught process-level exception in Node,
+        // which (with no global handler installed) would crash the whole
+        // TeamHub server over one dead browser tab.
+        clearInterval(heartbeat);
+      }
+    }, 25000);
 
     req.on("close", () => {
       clearInterval(heartbeat);
       unsubscribe();
     });
+  });
+
+  // Every business-logic function this router calls (sendMessage,
+  // reportStatus, etc.) throws a plain Error for validation-style failures
+  // rather than returning a result code. Without this, an uncaught throw
+  // from a synchronous Express route handler falls through to Express's
+  // default error page — HTML, not JSON — which breaks every dashboard
+  // fetch().then(r => r.json()) call with a confusing secondary parse
+  // error instead of the actual message. Must be registered after all
+  // other routes/middleware (Express error handlers are order-dependent).
+  router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+    console.error("API request failed:", err);
+    res.status(400).json({ error: err.message || "Request failed" });
   });
 
   return router;

@@ -14,16 +14,20 @@ nothing special is built for that; it's just your usual Claude Code session.
 ## Your identity
 
 - Your teamhub handle, your project_id, and your Team Lead's handle are
-  provided in your system prompt or by the human who started this session
-  (e.g. you are `dev-A`, project_id `bts-project`, lead is `master-1`).
+  provided in your system prompt or by Owner — the person who started this
+  session (e.g. you are `dev-A`, project_id `bts-project`, lead is
+  `master-1`).
 - At the start of every session, call `register` with your handle,
   role="developer", and project_id, if you haven't already this session.
+- **Owner** is the reserved handle for the human operator — it never shows
+  up in `list_team`, but a message from or to `owner` is Owner talking to
+  you directly (via the dashboard or their own session), not the Team Lead.
 
 ## Operating mode: auto vs manual
 
-Every registration has a `mode`: `manual` (default) or `auto`. This is the
-human's choice, not yours to pick on your own — only set it when your human
-partner explicitly tells you to, either at registration
+Every registration has a `mode`: `manual` (default) or `auto`. This is
+Owner's choice, not yours to pick on your own — only set it when Owner
+explicitly tells you to, either at registration
 (`register(..., mode="auto")`) or anytime after via
 `set_mode(handle, mode)`.
 
@@ -41,23 +45,38 @@ partner explicitly tells you to, either at registration
   all. If a cycle ends because you were interrupted, your very next
   instruction will say so explicitly — stop pursuing whatever you were
   doing before and follow it.
-- Setting `mode="auto"` while running interactively (a human at the
-  keyboard) only records the intent in TeamHub — it does not change how
-  Claude Code itself asks for tool approval in that session, and nothing
-  can remotely kill an interactive turn. Real auto-approval + interrupt
-  only happens through the headless runner.
+- Setting `mode="auto"` while running interactively (Owner at the keyboard)
+  only records the intent in TeamHub — it does not change how Claude Code
+  itself asks for tool approval in that session, and nothing can remotely
+  kill an interactive turn. Real auto-approval + interrupt only happens
+  through the headless runner.
+- **Auto mode is not "fully unattended forever" mode.** It only changes
+  whether the Lead can interrupt you mid-turn — it does not mean cycles
+  stop happening when there's genuinely nothing to do (a separate idle
+  check already skips a cycle entirely, with no Claude call and no cost,
+  when you have no unread messages and no task assigned to you that isn't
+  done or blocked), and it does not excuse skipping a reply to something
+  you did read.
 
 ## Core loop (each turn)
 
-Whether you're in an interactive session with a human watching, or running
+Whether you're in an interactive session with Owner watching, or running
 unattended cycles, do this at the start of every turn:
 
-1. **Check inbox** — call `check_inbox(handle=<your handle>)`.
+1. **Check inbox** — call `check_inbox(handle=<your handle>)`. Reply to
+   every message you find before you finish this turn — reading a message
+   without replying to it is indistinguishable, from the sender's side,
+   from never having seen it at all:
    - A `task_assignment` message means new work: it has a `task_ref` and a
      short summary. Pull the full task with `get_task(task_ref)` for
-     description and any comments.
-   - A `message` means the Team Lead answered a question or is giving you
-     direction. Act on it.
+     description and any comments. Acknowledge it (a short `report_status`
+     with `status="started"` is enough) so the Lead knows you picked it up.
+   - A `message` means the Team Lead — or **Owner** directly — is asking a
+     question, giving direction, or checking in. Reply with `send_message`
+     confirming what you did, are doing, or decided, even if the answer is
+     short. This applies whether the message is from the Lead or from
+     `owner` — Owner asking "did you finish X" deserves a real answer, not
+     silence just because no one is watching the console at that moment.
 
 2. **Work the task**:
    - Read the code, make the change, run tests if available.
@@ -84,3 +103,6 @@ unattended cycles, do this at the start of every turn:
   status" because you already reported it.
 - Don't mark a task `done` without also sending a `done` `report_status` —
   the Team Lead relies on that message, not just polling, to know instantly.
+- Don't end a turn with a message still unanswered — an unread count of
+  zero (from calling `check_inbox`) is not the same thing as having replied
+  to what was in it.

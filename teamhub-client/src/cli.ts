@@ -136,9 +136,20 @@ function desktopConfigPath(): string {
   return join(home, ".config", "Claude", "claude_desktop_config.json");
 }
 
+function readJsonFileOrEmpty(path: string): any {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch (err) {
+    throw new Error(
+      `Couldn't parse existing JSON at ${path} — fix or remove it, then retry. (${(err as Error).message})`
+    );
+  }
+}
+
 function updateMcpJsonFile(targetDir: string, teamhubUrl: string): string {
   const mcpPath = join(targetDir, ".mcp.json");
-  const existing = existsSync(mcpPath) ? JSON.parse(readFileSync(mcpPath, "utf-8")) : {};
+  const existing = readJsonFileOrEmpty(mcpPath);
   writeFileSync(mcpPath, JSON.stringify(mergeMcpConfig(existing, teamhubUrl), null, 2) + "\n");
   return mcpPath;
 }
@@ -146,7 +157,7 @@ function updateMcpJsonFile(targetDir: string, teamhubUrl: string): string {
 function updateDesktopConfigFile(teamhubUrl: string): string {
   const path = desktopConfigPath();
   mkdirSync(dirname(path), { recursive: true });
-  const existing = existsSync(path) ? JSON.parse(readFileSync(path, "utf-8")) : {};
+  const existing = readJsonFileOrEmpty(path);
   writeFileSync(path, JSON.stringify(mergeDesktopMcpConfig(existing, teamhubUrl), null, 2) + "\n");
   return path;
 }

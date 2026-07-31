@@ -7,6 +7,7 @@ import {
   permissionModeFor,
   redirectPrompt,
   runInterruptibleCycle,
+  logStreamEvent,
 } from "../../agents/runner.js";
 
 describe("parseArgs", () => {
@@ -81,6 +82,30 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--role", "master", "--handle", "h"])).toThrow(/--project/);
     expect(() => parseArgs(["--role", "master", "--project", "p"])).toThrow(/--handle/);
   });
+
+
+  it("throws when --master-handle is missing for developer/tester roles", () => {
+    expect(() => parseArgs(["--role", "developer", "--project", "p", "--handle", "h"])).toThrow(/--master-handle/);
+    expect(() => parseArgs(["--role", "tester", "--project", "p", "--handle", "h"])).toThrow(/--master-handle/);
+    expect(() =>
+      parseArgs(["--role", "master", "--project", "p", "--handle", "h"])
+    ).not.toThrow();
+  });
+
+  it("throws when --cycle or --watchdog-interval is not a positive number", () => {
+    expect(() =>
+      parseArgs(["--role", "master", "--project", "p", "--handle", "h", "--cycle", "abc"])
+    ).toThrow(/--cycle/);
+    expect(() =>
+      parseArgs(["--role", "master", "--project", "p", "--handle", "h", "--cycle", "0"])
+    ).toThrow(/--cycle/);
+    expect(() =>
+      parseArgs([
+        "--role", "developer", "--project", "p", "--handle", "h",
+        "--master-handle", "m", "--watchdog-interval", "-1",
+      ])
+    ).toThrow(/--watchdog-interval/);
+  });
 });
 
 describe("claudeCommand", () => {
@@ -151,6 +176,19 @@ describe("prompts", () => {
     });
     expect(prompt).toContain("master-1");
     expect(prompt).toContain("dev-A");
+    expect(prompt).toMatch(/MUST reply/);
+  });
+
+  it("cyclePrompt requires replying to every message sender, including owner, for all three roles", () => {
+    const base = { project: "proj-x", cycle: 30, mode: "manual" as const, watchdogInterval: 5 };
+    const master = cyclePrompt({ ...base, role: "master", handle: "master-1", cycle: 60 });
+    const developer = cyclePrompt({ ...base, role: "developer", handle: "dev-A", masterHandle: "master-1" });
+    const tester = cyclePrompt({ ...base, role: "tester", handle: "tester-1", masterHandle: "master-1" });
+    for (const prompt of [master, developer, tester]) {
+      expect(prompt).toMatch(/MUST/);
+      expect(prompt).toMatch(/owner/i);
+      expect(prompt).toMatch(/read-but-unanswered|before (you finish|finishing) this turn/i);
+    }
   });
 
   it("kickoffPrompt and cyclePrompt for tester mention testing/bugs, not just coding", () => {
@@ -265,5 +303,35 @@ describe("runInterruptibleCycle", () => {
     expect(outcome).toEqual({ interrupted: false });
     expect(calls).toBeGreaterThanOrEqual(3);
     expect(killSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("logStreamEvent", () => {
+  it("prints assistant text blocks", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    logStreamEvent("master-1", {
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Created task BTS-3." }] },
+    });
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("Created task BTS-3."));
+    spy.mockRestore();
+  });
+
+  it("prints tool_use blocks with the tool name", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    logStreamEvent("dev-A", {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", name: "mcp__teamhub__check_inbox", input: { handle: "dev-A" } }] },
+    });
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("calling mcp__teamhub__check_inbox"));
+    spy.mockRestore();
+  });
+
+  it("never throws on an unrecognized or malformed event shape", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    expect(() => logStreamEvent("h", { type: "something_unexpected" })).not.toThrow();
+    expect(() => logStreamEvent("h", null)).not.toThrow();
+    expect(() => logStreamEvent("h", { type: "assistant", message: {} })).not.toThrow();
+    spy.mockRestore();
   });
 });

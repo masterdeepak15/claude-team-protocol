@@ -43,3 +43,15 @@ describe("tasks module", () => {
     expect(comments[0].text).toBe("Started working on this");
   });
 });
+
+describe("task_ref uniqueness under rapid creation", () => {
+  it("never produces a duplicate task_ref, even across many rapid creates", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask } = await import("../../teamhub/tasks.js");
+    createProject("proj-task-race", "Task Race Project", "PTR");
+    const refs = Array.from({ length: 25 }, () => createTask("proj-task-race", "Task").task_ref);
+    expect(new Set(refs).size).toBe(refs.length);
+    expect(refs[0]).toBe("PTR-1");
+    expect(refs[24]).toBe("PTR-25");
+  });
+});

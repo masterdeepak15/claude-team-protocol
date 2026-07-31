@@ -7,6 +7,7 @@ import {
   permissionModeFor,
   redirectPrompt,
   runInterruptibleCycle,
+  logStreamEvent,
 } from "../src/runner.js";
 
 describe("parseArgs", () => {
@@ -158,5 +159,34 @@ describe("runInterruptibleCycle", () => {
 
     expect(outcome).toEqual({ interrupted: true, interruptText: "stop now" });
     expect(killSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("logStreamEvent", () => {
+  it("prints assistant text blocks", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    logStreamEvent("master-1", {
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Created task BTS-3." }] },
+    });
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("Created task BTS-3."));
+    spy.mockRestore();
+  });
+
+  it("prints tool_use blocks with the tool name", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    logStreamEvent("dev-A", {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", name: "mcp__teamhub__check_inbox", input: { handle: "dev-A" } }] },
+    });
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("calling mcp__teamhub__check_inbox"));
+    spy.mockRestore();
+  });
+
+  it("never throws on an unrecognized or malformed event shape", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    expect(() => logStreamEvent("h", { type: "something_unexpected" })).not.toThrow();
+    expect(() => logStreamEvent("h", null)).not.toThrow();
+    spy.mockRestore();
   });
 });

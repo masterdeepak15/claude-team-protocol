@@ -16,9 +16,28 @@ repo for the full setup.
   summary). Register your handle once per session before anything else.
 - **Developer:** use the `team-developer` skill. Register your handle once
   per session, then check your inbox before starting work each turn.
-- Both roles are plain, interactive `claude` sessions — nothing stops you
-  from calling any TeamHub tool directly, whether or not the skill's
+- **Tester:** use the `tester` skill. Register your handle once per
+  session (role="tester"), then check your inbox for test tasks the same
+  way a Developer checks for coding tasks.
+- All three roles are plain, interactive `claude` sessions — nothing stops
+  you from calling any TeamHub tool directly, whether or not the skill's
   default flow covers what you're doing right now.
+
+## Owner, and always replying
+
+**Owner** is the reserved handle for the human running this team — the
+person at the dashboard or the one who started your session. It's never a
+registered agent (TeamHub rejects registering it as one), so it won't show
+up in `list_team`, but `send_message`/`check_inbox` work with it exactly
+like any other handle.
+
+Whatever role you're in: if `check_inbox` returns a message — from the
+Lead, a Developer, a Tester, or Owner directly — reply to it with
+`send_message` or `report_status` before you consider the turn finished.
+Reading a message without replying looks, to whoever sent it, identical to
+never having seen it at all. This matters most for Owner's messages, since
+in headless/auto mode there's often no one else watching to notice a
+question went unanswered.
 
 ## TeamHub tools (`mcp__teamhub__*`)
 
@@ -46,9 +65,9 @@ your code or git history. That's handled entirely by the tools below.
 
   Root cause was a shared fixture leaking state between test runs."
   ```
-- Confirm with your human partner before force-pushing, rewriting history,
-  or pushing directly to a shared branch like `main`/`master` — same rule
-  as any other Claude Code session, TeamHub doesn't change that.
+- Confirm with Owner before force-pushing, rewriting history, or pushing
+  directly to a shared branch like `main`/`master` — same rule as any other
+  Claude Code session, TeamHub doesn't change that.
 - After pushing, call `update_task_status` (e.g. to `in_review` or `done`)
   and `report_status` so the Lead sees it without having to ask.
 
@@ -69,7 +88,7 @@ your code or git history. That's handled entirely by the tools below.
 
 ## Skills reference
 
-- `team-lead`, `team-developer`, `project-planner` — install from
+- `team-lead`, `team-developer`, `tester`, `project-planner` — install from
   `.claude/skills/` (copied in) or via the Spyder marketplace:
   `/plugin marketplace add masterdeepak15/Spyder` then
   `/plugin install teamhub-team@spyder`.

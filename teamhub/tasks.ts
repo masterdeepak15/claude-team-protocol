@@ -24,15 +24,6 @@ function now(): string {
   return new Date().toISOString();
 }
 
-function nextTaskRef(project_id: string): string {
-  const project = getProject(project_id);
-  const prefix = project?.key_prefix ?? "TASK";
-  const row = db
-    .prepare(`SELECT COUNT(*) as n FROM tasks WHERE project_id = ?`)
-    .get(project_id) as { n: number };
-  return `${prefix}-${row.n + 1}`;
-}
-
 export function createTask(
   project_id: string,
   title: string,
@@ -40,14 +31,30 @@ export function createTask(
   sprint_id?: number,
   priority: string = "medium"
 ): Task {
-  const task_ref = nextTaskRef(project_id);
+  const project = getProject(project_id);
+  const prefix = project?.key_prefix ?? "TASK";
   const ts = now();
-  db.prepare(
-    `INSERT INTO tasks (project_id, task_ref, sprint_id, title, description, status, priority, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'backlog', ?, ?, ?)`
-  ).run(project_id, task_ref, sprint_id ?? null, title, description ?? null, priority, ts, ts);
+  // task_ref is computed and inserted in ONE statement (the COUNT subquery
+  // runs under the same write lock as the INSERT), not a separate SELECT
+  // followed by a separate INSERT. Two processes racing to create a task
+  // for the same project at the same moment could otherwise both read the
+  // same count and try to insert the same task_ref, hitting the UNIQUE
+  // constraint. RETURNING hands back the computed ref directly.
+  const row = db
+    .prepare(
+      `INSERT INTO tasks (project_id, task_ref, sprint_id, title, description, status, priority, created_at, updated_at)
+       VALUES (
+         ?,
+         ? || '-' || ((SELECT COUNT(*) FROM tasks WHERE project_id = ?) + 1),
+         ?, ?, ?, 'backlog', ?, ?, ?
+       )
+       RETURNING task_ref`
+    )
+    .get(project_id, prefix, project_id, sprint_id ?? null, title, description ?? null, priority, ts, ts) as {
+    task_ref: string;
+  };
   emitChange("task", project_id);
-  return getTaskByRef(task_ref)!;
+  return getTaskByRef(row.task_ref)!;
 }
 
 export function getTaskByRef(task_ref: string): Task | undefined {

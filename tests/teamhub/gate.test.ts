@@ -54,3 +54,45 @@ describe("gate module", () => {
     expect(hasPendingWork("tester", "tester-gate-e", "proj-gate-e")).toBe(true);
   });
 });
+
+describe("hasOwnActiveWork", () => {
+  it("is true once a task is assigned to the handle and not yet done/blocked", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask, assignTask, updateTaskStatus } = await import("../../teamhub/tasks.js");
+    const { hasOwnActiveWork } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-f", "Gate Project F", "PGF");
+    expect(hasOwnActiveWork("dev-gate-f")).toBe(false);
+    const task = createTask("proj-gate-f", "Assigned task");
+    assignTask(task.task_ref, "dev-gate-f");
+    expect(hasOwnActiveWork("dev-gate-f")).toBe(true);
+    updateTaskStatus(task.task_ref, "done");
+    expect(hasOwnActiveWork("dev-gate-f")).toBe(false);
+  });
+
+  it("is false while the task is blocked — waiting on someone else, not on the developer", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask, assignTask, updateTaskStatus } = await import("../../teamhub/tasks.js");
+    const { hasOwnActiveWork } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-g", "Gate Project G", "PGG");
+    const task = createTask("proj-gate-g", "Blocked task");
+    assignTask(task.task_ref, "dev-gate-g");
+    updateTaskStatus(task.task_ref, "blocked");
+    expect(hasOwnActiveWork("dev-gate-g")).toBe(false);
+  });
+});
+
+describe("hasPendingWork considers a developer's own in-progress task, not just messages", () => {
+  it("is true for a developer with an assigned in-progress task even with an empty inbox", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask, assignTask, updateTaskStatus } = await import("../../teamhub/tasks.js");
+    const { hasPendingWork } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-h", "Gate Project H", "PGH");
+    const task = createTask("proj-gate-h", "In progress task");
+    assignTask(task.task_ref, "dev-gate-h");
+    updateTaskStatus(task.task_ref, "in_progress");
+    // No message was ever sent to dev-gate-h — only the assigned task
+    // makes this true. Before the fix, this returned false forever once
+    // the assignment message itself had been read.
+    expect(hasPendingWork("developer", "dev-gate-h", "proj-gate-h")).toBe(true);
+  });
+});

@@ -91,11 +91,20 @@ export function reportStatus(
   const master = db
     .prepare(`SELECT handle FROM members WHERE project_id = ? AND role = 'master' LIMIT 1`)
     .get(project_id) as { handle: string } | undefined;
+  if (!master) {
+    // Previously fell back to a literal "master" handle that belongs to no
+    // one, so the status update just sat there undelivered with no error
+    // and no way to notice. Fail loudly instead — the caller (a developer
+    // mid-cycle) gets a clear reason rather than a silent no-op.
+    throw new Error(
+      `No master is registered yet for project "${project_id}" — there's no one to deliver this status update to.`
+    );
+  }
   const msg: Message = {
     id: randomUUID(),
     project_id,
     from_handle,
-    to_handle: master ? master.handle : "master",
+    to_handle: master.handle,
     type: "status_update",
     text: `[${status}] ${note}`,
     task_ref,
@@ -141,10 +150,18 @@ export function peekInterrupt(handle: string): Message | undefined {
 }
 
 export function checkInbox(handle: string): Message[] {
+  // UPDATE...RETURNING in one statement, not a SELECT followed by a
+  // separate UPDATE WHERE read = 0. The old two-step version had a real
+  // gap: if a new message arrived between the SELECT and the UPDATE (e.g.
+  // the dashboard sends one while a cycle is mid-check), the UPDATE's own
+  // `read = 0` condition would silently mark that new, never-returned
+  // message as read too — lost without the caller ever seeing it. Doing
+  // both in one statement means exactly the rows that transition are the
+  // rows handed back.
   const rows = db
-    .prepare(`SELECT * FROM messages WHERE to_handle = ? AND read = 0 ORDER BY ts ASC`)
+    .prepare(`UPDATE messages SET read = 1 WHERE to_handle = ? AND read = 0 RETURNING *`)
     .all(handle) as any[];
-  db.prepare(`UPDATE messages SET read = 1 WHERE to_handle = ? AND read = 0`).run(handle);
+  rows.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   touchMember(handle);
   return rows.map(rowToMessage);
 }

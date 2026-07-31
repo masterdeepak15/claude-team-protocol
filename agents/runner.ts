@@ -30,14 +30,31 @@ export function parseArgs(argv: string[]): RunnerArgs {
   if (raw.mode !== undefined && raw.mode !== "auto" && raw.mode !== "manual") {
     throw new Error(`--mode must be "auto" or "manual", got "${raw.mode}"`);
   }
+  if ((raw.role === "developer" || raw.role === "tester") && !raw["master-handle"]) {
+    // Without this, args.masterHandle is undefined and every prompt this
+    // runner sends ends up literally containing the text "undefined" where
+    // the Lead's handle should be — a confusing, silent failure mode.
+    throw new Error(`--master-handle is required when --role is "${raw.role}"`);
+  }
+  const cycle = Number(raw.cycle ?? (raw.role === "master" ? 60 : 30));
+  if (!Number.isFinite(cycle) || cycle <= 0) {
+    throw new Error(`--cycle must be a positive number of seconds, got "${raw.cycle}"`);
+  }
+  const watchdogInterval = Number(raw["watchdog-interval"] ?? 5);
+  if (!Number.isFinite(watchdogInterval) || watchdogInterval <= 0) {
+    // A typo here (e.g. a non-numeric value) would otherwise silently
+    // become NaN, which setTimeout treats as ~0ms — a tight, silent,
+    // token-burning loop rather than a clear error at startup.
+    throw new Error(`--watchdog-interval must be a positive number of seconds, got "${raw["watchdog-interval"]}"`);
+  }
   return {
     role: raw.role,
     project: raw.project,
     handle: raw.handle,
     masterHandle: raw["master-handle"],
-    cycle: Number(raw.cycle ?? (raw.role === "master" ? 60 : 30)),
+    cycle,
     mode: (raw.mode as "auto" | "manual" | undefined) ?? "manual",
-    watchdogInterval: Number(raw["watchdog-interval"] ?? 5),
+    watchdogInterval,
   };
 }
 
@@ -94,12 +111,39 @@ export function kickoffPrompt(args: RunnerArgs): string {
 
 export function cyclePrompt(args: RunnerArgs): string {
   if (args.role === "master") {
-    return `Check your teamhub inbox (handle="${args.handle}"). Answer any developer or tester questions with send_message. Reflect any status updates in your task tracker. If a developer or tester has no active task and there is ready work for them, assign it with assign_task and notify_assignment.`;
+    return (
+      `Check your teamhub inbox (handle="${args.handle}"). For EVERY unread message you find — ` +
+      `from a developer, a tester, or from "owner" (the human operator) — you MUST send a reply ` +
+      `back to that exact sender with send_message before you finish this turn, even if the reply ` +
+      `is short (e.g. "Reviewed BTS-4, looks good" or "Checked with dev-A, still in progress"). ` +
+      `Never leave a message read-but-unanswered. Reflect any status updates in your task tracker. ` +
+      `If a developer or tester has no active task and there is ready work for them, assign it ` +
+      `with assign_task and notify_assignment.`
+    );
   }
   if (args.role === "tester") {
-    return `Check your teamhub inbox (handle="${args.handle}"). If you have a new test task, pull the full details from your task tracker, run or write the tests, and file any bugs you find as comments or new tasks. Update the task status as you go, and call report_status with your test results so "${args.masterHandle}" is notified. If you're stuck, send_message to "${args.masterHandle}" and check back next cycle for a reply.`;
+    return (
+      `Check your teamhub inbox (handle="${args.handle}"). For EVERY unread message — a new test ` +
+      `task, a question, or anything from "owner" (the human operator) — you MUST reply to that ` +
+      `exact sender with send_message or report_status before finishing this turn, confirming what ` +
+      `you did or your current status. Never leave a message read-but-unanswered. If you have a new ` +
+      `test task, pull the full details from your task tracker, run or write the tests, and file any ` +
+      `bugs you find as comments or new tasks. Update the task status as you go, and call ` +
+      `report_status with your test results so "${args.masterHandle}" is notified. If you're stuck, ` +
+      `send_message to "${args.masterHandle}" and check back next cycle for a reply.`
+    );
   }
-  return `Check your teamhub inbox (handle="${args.handle}"). If you have a new task assignment, pull the full details from your task tracker, work the code, and push to GitHub. Update the task status as you go, and call report_status so "${args.masterHandle}" is notified. If you're stuck, send_message to "${args.masterHandle}" and check back next cycle for a reply.`;
+  return (
+    `Check your teamhub inbox (handle="${args.handle}"). For EVERY unread message — a new task ` +
+    `assignment, a question, or anything from "owner" (the human operator) — you MUST reply to ` +
+    `that exact sender with send_message or report_status before finishing this turn, confirming ` +
+    `what you did or your current status (done, in progress, blocked, etc). Never leave a message ` +
+    `read-but-unanswered — reading it without replying looks identical to ignoring it entirely. If ` +
+    `you have a new task assignment, pull the full details from your task tracker, work the code, ` +
+    `and push to GitHub. Update the task status as you go, and call report_status so ` +
+    `"${args.masterHandle}" is notified. If you're stuck, send_message to "${args.masterHandle}" ` +
+    `and check back next cycle for a reply.`
+  );
 }
 
 export function redirectPrompt(interruptText: string): string {
@@ -132,7 +176,19 @@ function spawnClaude(
   const resumeArgs = existsSync(file) ? ["--resume", readFileSync(file, "utf-8").trim()] : [];
   const child: ChildProcess = crossSpawn(
     claudeCommand(),
-    ["-p", prompt, ...resumeArgs, "--allowedTools", allowedTools, "--permission-mode", permissionMode, "--output-format", "json"],
+    [
+      "-p", prompt, ...resumeArgs,
+      "--allowedTools", allowedTools,
+      "--permission-mode", permissionMode,
+      // stream-json (message-level, not --include-partial-messages'
+      // token-level) + --verbose (required for stream-json to emit
+      // anything beyond a bare init line) gives one JSON event per
+      // assistant message / tool call as the cycle runs, instead of a
+      // single blob only available once the whole turn finishes. Printed
+      // live below so an auto-mode session actually shows what it's
+      // doing, not just its final summary.
+      "--output-format", "stream-json", "--verbose",
+    ],
     // stdin explicitly closed ("ignore"), not left as the default open pipe.
     // This is headless/unattended — nobody is ever going to type a response.
     // If any code path inside `claude` ever tries to read a confirmation
@@ -142,10 +198,26 @@ function spawnClaude(
     { stdio: ["ignore", "pipe", "pipe"] }
   );
 
-  let stdout = "";
+  let lineBuffer = "";
   let stderr = "";
+  let finalResult: unknown;
+
   child.stdout?.on("data", (chunk) => {
-    stdout += chunk;
+    lineBuffer += chunk;
+    let newlineAt: number;
+    while ((newlineAt = lineBuffer.indexOf("\n")) !== -1) {
+      const line = lineBuffer.slice(0, newlineAt).trim();
+      lineBuffer = lineBuffer.slice(newlineAt + 1);
+      if (!line) continue;
+      let event: any;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue; // a malformed/partial line should never crash the runner
+      }
+      logStreamEvent(handle, event);
+      if (event?.type === "result") finalResult = event;
+    }
   });
   child.stderr?.on("data", (chunk) => {
     stderr += chunk;
@@ -156,13 +228,51 @@ function spawnClaude(
     child.on("close", (code) => {
       if (code !== 0) {
         reject(new Error(`claude exited with code ${code}: ${stderr}`));
+      } else if (finalResult === undefined) {
+        reject(new Error(`claude exited 0 but no "result" event was seen in its stream-json output: ${stderr}`));
       } else {
-        resolve({ stdout });
+        // Re-serialized so finishCycle (JSON.parse(stdout)) sees the exact
+        // same shape it always has — this only changes how the final
+        // result gets assembled, not the contract around it.
+        resolve({ stdout: JSON.stringify(finalResult) });
       }
     });
   });
 
   return { child, result };
+}
+
+// Best-effort, defensive console progress for stream-json events. Anthropic
+// hasn't published a full type reference for these event shapes (tracked in
+// anthropics/claude-code#24596 as of mid-2026), so this deliberately reads
+// everything through optional chaining and silently drops anything it
+// doesn't recognize rather than risk crashing a real cycle over a logging
+// line.
+export function logStreamEvent(handle: string, event: any): void {
+  try {
+    if (event?.type === "assistant" && Array.isArray(event.message?.content)) {
+      for (const block of event.message.content) {
+        if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
+          console.log(`[${handle}] ${truncateForLog(block.text.trim())}`);
+        } else if (block?.type === "tool_use" && typeof block.name === "string") {
+          console.log(`[${handle}] → calling ${block.name}(${truncateForLog(JSON.stringify(block.input ?? {}), 150)})`);
+        }
+      }
+    } else if (event?.type === "system" && event.subtype === "init") {
+      console.log(`[${handle}] session started${event.model ? ` (model: ${event.model})` : ""}.`);
+    }
+    // tool_result ("user"-role) events and other system subtypes are
+    // intentionally not printed — the tool_use line above already shows
+    // what was called; the assistant's next text block usually summarizes
+    // the outcome anyway, so this stays a readable progress log rather
+    // than a full raw transcript dump.
+  } catch {
+    // A logging hiccup must never break the actual cycle.
+  }
+}
+
+function truncateForLog(text: string, max = 300): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
 function finishCycle(stdout: string, handle: string): void {
