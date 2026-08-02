@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
 import { listTasks } from "./tasks.js";
+import type { Role } from "./members.js";
 
 // Pure DB reads only — no Claude call, no tokens spent. Called directly over
 // MCP by the headless runner's idle gate (see agents/runner.ts) before it
@@ -38,11 +39,7 @@ export function hasOwnActiveWork(handle: string): boolean {
   return rows.n > 0;
 }
 
-export function hasPendingWork(
-  role: "master" | "developer" | "tester",
-  handle: string,
-  project_id: string
-): boolean {
+export function hasPendingWork(role: Role, handle: string, project_id: string): boolean {
   if (hasUnreadMessages(handle)) return true;
   if (role === "master" && hasReadyUnassignedWork(project_id)) return true;
   if (role !== "master" && hasOwnActiveWork(handle)) return true;
@@ -54,7 +51,7 @@ export function registerTools(server: McpServer): void {
     "has_pending_work",
     "Cheap, non-AI check for whether this handle has anything to react to right now (unread messages, or for master, unassigned ready backlog). Intended for the headless runner's idle gate, not for normal turn use.",
     {
-      role: z.enum(["master", "developer", "tester"]),
+      role: z.enum(["master", "developer", "tester", "analyst"]),
       handle: z.string(),
       project_id: z.string(),
     },

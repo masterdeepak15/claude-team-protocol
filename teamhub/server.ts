@@ -11,6 +11,7 @@ import * as sprints from "./sprints.js";
 import * as tasks from "./tasks.js";
 import * as gate from "./gate.js";
 import { buildApiRouter } from "./api.js";
+import { requireBearerToken, getOrCreateToken } from "./auth.js";
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname_, "public");
@@ -56,7 +57,7 @@ export function buildHttpApp(): express.Express {
   app.use("/api", buildApiRouter());
   app.use(express.static(PUBLIC_DIR));
 
-  app.post("/mcp", async (req, res) => {
+  app.post("/mcp", requireBearerToken, async (req, res) => {
     try {
       const server = buildServer();
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -87,10 +88,19 @@ function isMain(): boolean {
 if (isMain()) {
   const PORT = Number(process.env.TEAMHUB_PORT || 8787);
   const app = buildHttpApp();
+  const token = getOrCreateToken();
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`teamhub listening on http://0.0.0.0:${PORT}/mcp`);
     console.log(`Point other machines at http://<this-PC-LAN-IP>:${PORT}/mcp`);
     console.log(`Health check: http://<this-PC-LAN-IP>:${PORT}/health`);
     console.log(`Dashboard: http://<this-PC-LAN-IP>:${PORT}/`);
+    console.log("");
+    console.log(`Shared auth token (also saved to ~/.teamhub/teamhub.token): ${token}`);
+    console.log(`Every machine needs this — as the dashboard login, and as`);
+    console.log(`the "Authorization: Bearer <token>" header in their .mcp.json`);
+    console.log(`for the "teamhub" server entry. "teamhub connect"/"teamhub`);
+    console.log(`install" set this up automatically when run on the same`);
+    console.log(`machine as the server; other machines need it added manually`);
+    console.log(`or via the printed token above.`);
   });
 }

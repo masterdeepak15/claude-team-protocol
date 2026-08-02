@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "./db.js";
 import { emitChange } from "./events.js";
 
-export type Role = "master" | "developer" | "tester";
+export type Role = "master" | "developer" | "tester" | "analyst";
 
 // Reserved for the human dashboard operator (see teamhub/public — the
 // "Acting as: Owner" identity that sends dashboard-composed messages). Not
@@ -18,6 +18,26 @@ export interface Member {
   status: string | null;
   last_seen: string;
   mode: "auto" | "manual";
+}
+
+export interface MemberWithPresence extends Member {
+  online: boolean;
+}
+
+// A registered handle only ever touches TeamHub in two ways while running
+// headless: an actual cycle (register/check_inbox/etc, all of which touch
+// last_seen already via existing calls elsewhere), or — while idle — the
+// long-poll wait-for-work connection (see teamhub/api.ts), which now also
+// touches last_seen on every connect/reconnect. Since that reconnects at
+// most every ~55s even with nothing to do, anyone genuinely running should
+// never go quiet for longer than that; a generous multiple of it as the
+// "online" cutoff means one slow network round trip doesn't flip someone
+// to offline, while an actually-dead/killed process reliably does within
+// well under two minutes.
+const ONLINE_THRESHOLD_MS = 90_000;
+
+function isOnline(lastSeenIso: string): boolean {
+  return Date.now() - new Date(lastSeenIso).getTime() < ONLINE_THRESHOLD_MS;
 }
 
 function now(): string {
@@ -53,10 +73,9 @@ export function getMember(handle: string): Member | undefined {
   return db.prepare(`SELECT * FROM members WHERE handle = ?`).get(handle) as Member | undefined;
 }
 
-export function listTeam(project_id: string): Member[] {
-  return db
-    .prepare(`SELECT * FROM members WHERE project_id = ?`)
-    .all(project_id) as Member[];
+export function listTeam(project_id: string): MemberWithPresence[] {
+  const rows = db.prepare(`SELECT * FROM members WHERE project_id = ?`).all(project_id) as Member[];
+  return rows.map((m) => ({ ...m, online: isOnline(m.last_seen) }));
 }
 
 export function touchMember(handle: string): void {
@@ -86,10 +105,10 @@ export function setMemberMode(handle: string, mode: "auto" | "manual"): void {
 export function registerTools(server: McpServer): void {
   server.tool(
     "register",
-    "Register this session under a handle (e.g. 'master-1', 'dev-A', 'tester-1') and role for a project, so other team members can reach it by name. Call this once at the start of a session. Roles: 'master' (Team Lead), 'developer' (writes code), 'tester' (pulls test tasks, runs/writes tests, reports bugs and results back to master). Optionally set mode: 'auto' (full auto-approval; the Lead can remotely interrupt and redirect this session's in-flight work — only meaningful when running headless via agents/runner.ts) or 'manual' (default; human-supervised, cannot be remotely interrupted). Omit mode to keep whatever was set previously (defaults to 'manual' on first registration).",
+    "Register this session under a handle (e.g. 'master-1', 'dev-A', 'tester-1', 'analyst-1') and role for a project, so other team members can reach it by name. Call this once at the start of a session. Roles: 'master' (Team Lead), 'developer' (writes code), 'tester' (pulls test tasks, runs/writes tests, reports bugs and results back to master), 'analyst' (clarifies requirements, researches open questions, reviews task/test outcomes for patterns — does not write code). Optionally set mode: 'auto' (full auto-approval; the Lead can remotely interrupt and redirect this session's in-flight work — only meaningful when running headless via agents/runner.ts) or 'manual' (default; human-supervised, cannot be remotely interrupted). Omit mode to keep whatever was set previously (defaults to 'manual' on first registration).",
     {
       handle: z.string().describe("Unique short name for this session, e.g. dev-A"),
-      role: z.enum(["master", "developer", "tester"]),
+      role: z.enum(["master", "developer", "tester", "analyst"]),
       project_id: z.string().describe("Project identifier shared by the whole team"),
       mode: z.enum(["auto", "manual"]).optional(),
     },

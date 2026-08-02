@@ -3,13 +3,16 @@
 ## Overview
 
 One MCP server (`teamhub`), one SQLite file, multiple projects. Every
-`claude` session — Master, Developer, or Tester, on any PC — connects to the
-same `teamhub` HTTP endpoint. `role` is one of `master` | `developer` |
-`tester` on the `members` table; only `master` gets Lead-specific tools
-(`assign_task`, `create_task`, etc.) via the skills/allowed-tools lists —
-`developer` and `tester` share the same underlying tool surface and differ
-only in what their skill instructs them to do with it (write code vs.
-verify it).
+`claude` session — Master, Developer, Tester, or Analyst, on any PC —
+connects to the same `teamhub` HTTP endpoint, authenticated with one shared
+Bearer token (see "Auth" below). `role` is one of `master` | `developer` |
+`tester` | `analyst` on the `members` table; only `master` gets
+Lead-specific tools (`assign_task`, `create_task`, etc.) via the
+skills/allowed-tools lists — `developer` and `tester` share the same
+underlying tool surface and differ only in what their skill instructs them
+to do with it (write code vs. verify it). `analyst` gets a read-only
+subset (no `Edit`/`Bash`) plus `WebSearch`/`WebFetch` — it clarifies
+requirements and researches, it doesn't write code.
 
 ```
                      PC1 (or a small always-on box)
@@ -164,32 +167,37 @@ precise about what it does and doesn't change:
   sender" below — a message from the Lead or from Owner still needs an
   answer regardless of mode.
 
-## The idle gate — cheap enough to poll forever, not just on messages
+## Waiting for work — long-poll, not a fixed interval
 
 Every headless cycle (`agents/runner.ts` / `teamhub-client/src/runner.ts`,
-both packages, identical logic) is gated by `has_pending_work` — a plain DB
-read exposed as an MCP tool (`teamhub/gate.ts`), called directly over MCP
-with **no `claude` process spawned and no tokens spent**:
+both packages, identical logic) blocks on `GET /api/wait-for-work`
+(`teamhub/api.ts`) instead of sleeping a fixed interval and then asking.
+The request itself is answered server-side the moment `has_pending_work`
+(`teamhub/gate.ts`) would return true, or after a timeout (the `--cycle`
+value, capped at 55s) — whichever comes first. Either way, **no `claude`
+process is spawned and no tokens are spent** just to check:
 
 - Master: pending if there's any unread message, **or** any backlog/todo
   task with no assignee yet.
-- Developer/Tester: pending if there's any unread message, **or** any task
-  already assigned to that handle whose status isn't `done`/`blocked`.
+- Developer/Tester/Analyst: pending if there's any unread message, **or**
+  (Developer/Tester only) any task already assigned to that handle whose
+  status isn't `done`/`blocked`.
 
 That second condition for Developer/Tester matters more than it looks: a
 developer who picked up a task in one cycle but didn't finish it, with no
-*new* message arriving on a later cycle, still needs to keep working on it.
-Gating purely on unread messages (an earlier version of this) meant that
-once the original `task_assignment` message had been read, the gate would
-report "idle" forever regardless of the task's actual status — the
-developer would never resume it on its own. Checking their own active work
-alongside messages closes that gap.
+*new* message arriving later, still needs to keep working on it. Gating
+purely on unread messages (an earlier version of this) meant that once the
+original `task_assignment` message had been read, the check would report
+"idle" forever regardless of the task's actual status. Checking their own
+active work alongside messages closes that gap.
 
-When the gate reports nothing pending, the runner logs `idle, nothing
-pending — skipping this cycle (no tokens used)` and goes straight back to
-sleep — no `claude -p` spawned, no AI cost, for as long as it stays quiet.
-The moment either condition becomes true, the very next poll spawns a real
-cycle.
+When nothing's pending, the runner logs `still idle after waiting —
+reconnecting to wait again (no tokens used)` and immediately opens another
+long-poll — no sleep, no wasted round trips, and reaction time is bounded
+by the event actually happening, not by whatever a fixed interval happened
+to be. `wait-for-work` also touches the calling handle's presence (see
+below) on every check-in, which is what keeps "online" accurate through
+long idle stretches with nothing else happening.
 
 ## Live console output during a cycle
 
@@ -228,19 +236,73 @@ the message having been ignored entirely. It's most likely to bite Owner
 specifically, since in auto mode there's often no one watching the console
 in the moment to notice a question went unanswered.
 
+## Auth — one shared token, two ways to present it
+
+Everything requires the one token `teamhub token` prints (generated on
+first use, saved to `~/.teamhub/teamhub.token`; override with
+`TEAMHUB_TOKEN`) — there are no per-user accounts, matching the single
+shared **Owner** identity established elsewhere in this doc:
+
+- **`/mcp` and `/api/wait-for-work`** (agent traffic): `Authorization:
+  Bearer <token>` header. `cli/teamhub-cli.ts` / `teamhub-client/src/cli.ts`
+  embed this automatically in the `.mcp.json`/Desktop config they generate;
+  `agents/runner.ts` / `teamhub-client/src/runner.ts` read it from
+  `TEAMHUB_TOKEN` for their own direct HTTP calls (the client package's
+  `agent` command auto-fills this from the config `connect` saved, so it
+  rarely needs setting by hand).
+- **`/api/*`** (the dashboard): a signed session cookie, obtained via
+  `POST /api/login` with `{ token }` in the body — this is what the
+  browser's login screen does. The cookie is stateless (HMAC-signed, no
+  server-side session table), but logout still has to mean something: a
+  persisted revocation timestamp (`~/.teamhub/session-revoked-before`)
+  invalidates every previously-issued cookie on `POST /api/logout`, not
+  just the one browser that clicked it — correct for a single shared
+  identity, where "log out" should mean everyone's logged out.
+
+The static dashboard shell (`/`, `/app.js`, `/styles.css`) is intentionally
+**not** gated — hiding empty HTML/JS/CSS chrome behind auth adds nothing;
+the actual data behind `/api/*` is what's protected. `/health` is also
+unauthenticated by design (see below).
+
+## Presence — who's actually online right now
+
+`members.last_seen` already existed for general bookkeeping, but nothing
+kept it fresh while a handle was idle-waiting with nothing to do — it only
+updated on real activity (`register`/`check_inbox`/etc). Since
+`wait-for-work` (above) reconnects at least every ~55s even when idle,
+touching presence there too means a genuinely running handle is never
+quiet for long: `listTeam`/`GET /api/projects/:id/members` derive `online:
+boolean` at read time as `now - last_seen < 90s` — generous over that 55s
+ceiling for network/processing slack, tight enough that a killed or
+crashed runner reliably shows offline within well under two minutes.
+
+The dashboard shows this as a live dot (Dashboard table, Team view,
+Messages picker). "Came online" arrives for free via the existing SSE
+event stream reacting to real activity; "went offline" has no event to
+push (it's an absence, not an occurrence), so the dashboard also
+re-polls members every 20s independent of SSE, purely to catch that case.
+
 ## HTTP surface
 
-`teamhub`'s Express app exposes two routes:
+`teamhub`'s Express app exposes:
 
-- `POST /mcp` — the actual MCP protocol endpoint. A plain browser/`curl` GET
-  against it always 404s (`Cannot GET /mcp`) — that's expected, not an error;
-  it just means you used the wrong HTTP method, not that the server is down.
-- `GET /health` — a plain, unauthenticated status route (`{"status":"ok","service":"teamhub","uptimeSeconds":N}`),
-  deliberately separate from the MCP protocol so "is TeamHub reachable from
-  this machine" can be checked with a browser tab or plain `curl`, without
-  needing to speak MCP at all. See `docs/setup-guide.md`'s troubleshooting
-  section for how this fits into diagnosing cross-machine connectivity
-  issues (firewall vs. wrong IP vs. genuinely down).
+- `POST /mcp` — the MCP protocol endpoint. Bearer-gated. A plain
+  browser/`curl` GET against it always 404s (`Cannot GET /mcp`) — that's
+  expected, not an error; wrong HTTP method, not a down server.
+- `GET /api/wait-for-work` — the long-poll described above. Bearer-gated.
+- `POST /api/login`, `POST /api/logout`, `GET /api/session` — unauthenticated
+  by necessity (logging in is how you get authenticated).
+- Every other `/api/*` route (projects, members, tasks, messages, `/api/events`
+  SSE, etc.) — session-cookie-gated, used by the dashboard only.
+- `GET /`, `/app.js`, `/styles.css` — the dashboard shell, unauthenticated
+  (see Auth above).
+- `GET /health` — a plain, unauthenticated status route
+  (`{"status":"ok","service":"teamhub","uptimeSeconds":N}`), deliberately
+  separate from everything above so "is TeamHub reachable from this
+  machine" can be checked with a browser tab or plain `curl`, without
+  needing a token or to speak MCP at all. See `docs/setup-guide.md`'s
+  troubleshooting section for how this fits into diagnosing cross-machine
+  connectivity issues (firewall vs. wrong IP vs. genuinely down).
 
 ## Storage
 

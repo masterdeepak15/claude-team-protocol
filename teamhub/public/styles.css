@@ -474,6 +474,36 @@ button:hover {
 .member-handle {
   font-weight: 700;
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.presence-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.presence-dot.online {
+  background: var(--green);
+  box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 4px var(--green);
+}
+
+.presence-dot.offline {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.presence-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-left: auto;
 }
 
 .member-badges {
@@ -734,4 +764,82 @@ button:hover {
     width: 78vw;
     min-width: 78vw;
   }
+}
+
+/* ---------- Login screen ---------- */
+
+.hidden {
+  display: none !important;
+}
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+  padding: 32px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.login-card .logo {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.login-sub {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+}
+
+.login-card input {
+  padding: 10px 12px;
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.login-card button {
+  padding: 10px 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-error {
+  min-height: 1.1em;
+  font-size: 0.8rem;
+  color: var(--red);
+  margin: 0;
+}
+
+.logout-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
 }

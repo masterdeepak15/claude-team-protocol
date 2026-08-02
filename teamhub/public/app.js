@@ -1,4 +1,4 @@
-import { api, subscribeEvents } from "./api.js";
+import { api, subscribeEvents, setUnauthorizedHandler } from "./api.js";
 
 // Reserved handle for the human dashboard operator — never a registered
 // agent (the server rejects registering this handle; see
@@ -34,10 +34,62 @@ const content = document.getElementById("content");
 const viewTitle = document.getElementById("viewTitle");
 const projectSelect = document.getElementById("projectSelect");
 const connDot = document.getElementById("connDot");
+const loginScreen = document.getElementById("loginScreen");
+const appRoot = document.getElementById("app");
+const loginForm = document.getElementById("loginForm");
+const loginTokenInput = document.getElementById("loginToken");
+const loginError = document.getElementById("loginError");
+const logoutBtn = document.getElementById("logoutBtn");
 
 async function init() {
   wireNav();
   wireSidebarToggle();
+  setUnauthorizedHandler(showLoginScreen);
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    loginError.textContent = "";
+    try {
+      await api.login(loginTokenInput.value);
+      loginTokenInput.value = "";
+      await showApp();
+    } catch (err) {
+      loginError.textContent = err.message || "Login failed.";
+    }
+  });
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Even if the logout request itself fails, still show the login
+      // screen locally — staying on the dashboard after clicking "Log out"
+      // would be a worse outcome than a stale session on the server side.
+    }
+    showLoginScreen();
+  });
+
+  const { loggedIn } = await api.session();
+  if (loggedIn) {
+    await showApp();
+  } else {
+    showLoginScreen();
+  }
+}
+
+function showLoginScreen() {
+  if (state.eventsUnsub) {
+    state.eventsUnsub();
+    state.eventsUnsub = null;
+  }
+  appRoot.classList.add("hidden");
+  loginScreen.classList.remove("hidden");
+  loginTokenInput.value = "";
+  loginError.textContent = "";
+  loginTokenInput.focus();
+}
+
+async function showApp() {
+  loginScreen.classList.add("hidden");
+  appRoot.classList.remove("hidden");
   try {
     state.projects = await api.listProjects();
   } catch (err) {
@@ -104,6 +156,7 @@ function closeSidebarOnMobile() {
 
 function connectEvents() {
   if (state.eventsUnsub) state.eventsUnsub();
+  if (state.presenceInterval) clearInterval(state.presenceInterval);
   connDot.classList.remove("connected");
   if (!state.currentProjectId) return;
   state.eventsUnsub = subscribeEvents(state.currentProjectId, async () => {
@@ -112,6 +165,21 @@ function connectEvents() {
     renderView();
   });
   setTimeout(() => connDot.classList.add("connected"), 300);
+
+  // "Went offline" has no event to push — it's the absence of one, not an
+  // occurrence — so presence needs a periodic re-check independent of the
+  // SSE stream above. Members refresh on every real change already; this
+  // only exists to catch a handle going quiet with nothing else happening.
+  state.presenceInterval = setInterval(async () => {
+    if (!state.currentProjectId) return;
+    try {
+      state.members = await api.listMembers(state.currentProjectId);
+      if (["dashboard", "team", "messages"].includes(state.currentView)) renderView();
+    } catch {
+      // A transient failure here just means presence is stale for one
+      // cycle — not worth surfacing as an error to the user.
+    }
+  }, 20000);
 }
 
 function renderView() {
@@ -177,12 +245,13 @@ function renderMemberTable(members) {
   return `
     <div class="table-scroll">
       <table class="table">
-        <thead><tr><th>Handle</th><th>Role</th><th>Mode</th><th>Status</th><th>Last seen</th></tr></thead>
+        <thead><tr><th></th><th>Handle</th><th>Role</th><th>Mode</th><th>Status</th><th>Last seen</th></tr></thead>
         <tbody>
           ${members
             .map(
               (m) => `
             <tr>
+              <td><span class="presence-dot ${m.online ? "online" : "offline"}" title="${m.online ? "Online" : "Offline"}"></span></td>
               <td>${escapeHtml(m.handle)}</td>
               <td><span class="badge role-${escapeHtml(m.role)}">${escapeHtml(m.role)}</span></td>
               <td><span class="badge mode-${escapeHtml(m.mode)}">${escapeHtml(m.mode)}</span></td>
@@ -281,7 +350,11 @@ function renderTeam() {
         .map(
           (m) => `
         <div class="member-card">
-          <div class="member-handle">${escapeHtml(m.handle)}</div>
+          <div class="member-handle">
+            <span class="presence-dot ${m.online ? "online" : "offline"}" title="${m.online ? "Online" : "Offline"}"></span>
+            ${escapeHtml(m.handle)}
+            <span class="presence-label">${m.online ? "online" : "offline"}</span>
+          </div>
           <div class="member-badges">
             <span class="badge role-${escapeHtml(m.role)}">${escapeHtml(m.role)}</span>
             <span class="badge mode-${escapeHtml(m.mode)}">${escapeHtml(m.mode)}</span>
@@ -314,6 +387,7 @@ async function renderMessages() {
             .map(
               (m) => `
           <button class="member-list-item ${m.handle === state.selectedMemberHandle ? "active" : ""}" data-handle="${escapeHtml(m.handle)}">
+            <span class="presence-dot ${m.online ? "online" : "offline"}" title="${m.online ? "Online" : "Offline"}"></span>
             <span>${escapeHtml(m.handle)}</span>
             <span class="badge role-${escapeHtml(m.role)}">${escapeHtml(m.role)}</span>
           </button>`

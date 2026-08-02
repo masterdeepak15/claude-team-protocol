@@ -32,16 +32,36 @@ directly into the conversation, or as a file to read):
    `list_projects`. If not, call `create_project` with a short id (slug),
    a name, and a `key_prefix` for task refs (e.g. id `bts-project`, prefix
    `BTS`).
-2. Read the brief and break it into concrete, right-sized tasks. Create a
-   sprint with `create_sprint` if Owner wants sprint structure, otherwise
-   tasks can live directly in the backlog.
-3. Call `create_task` for each piece of work — clear title, a description
+2. **Clarify before you plan — don't guess at scope.** Unless the brief is
+   already unambiguous and complete, ask Owner 3-5 targeted questions
+   before creating a single task: what's explicitly in scope vs out,
+   what's the actual priority order if not everything can happen at once,
+   any constraints that aren't obvious from the brief itself (deadlines,
+   tech/platform limits, things that must NOT change), and anything the
+   brief implies but doesn't state outright that you're unsure about. Pick
+   questions that would actually change what tasks you'd create or how
+   you'd size them — not generic filler.
+   - **Interactive session** (Owner is in the conversation with you right
+     now): ask directly and read their answer in the same exchange.
+     - **Headless/auto-mode cycle** (no one's watching this console right
+     now): `send_message` your questions to `owner`, then stop — do not
+     invent answers to fill the gap and proceed anyway. Pick this back up
+     on a later cycle once `check_inbox` shows Owner's reply. A wrong
+     assumption baked into ten tasks costs far more than one extra cycle
+     spent waiting for an answer.
+   - Skip this step only for a brief that's already genuinely
+     unambiguous and complete — don't manufacture questions for the sake
+     of it.
+3. Read the brief (plus Owner's clarifications) and break it into concrete,
+   right-sized tasks. Create a sprint with `create_sprint` if Owner wants
+   sprint structure, otherwise tasks can live directly in the backlog.
+4. Call `create_task` for each piece of work — clear title, a description
    with enough detail that a developer doesn't have to re-derive intent from
    the original brief.
-4. Check `list_team` for registered developer and tester handles. If none
+5. Check `list_team` for registered developer and tester handles. If none
    are registered yet, tell Owner which handles you're expecting and
    wait — don't assign to a handle that doesn't exist.
-5. For each ready task, `assign_task` (sets the assignee) and
+6. For each ready task, `assign_task` (sets the assignee) and
    `notify_assignment` (puts it in their inbox) to the best-fit developer
    handle. Once a developer moves a task to `in_review`, consider assigning
    a follow-up test task (or the same task) to a registered tester handle

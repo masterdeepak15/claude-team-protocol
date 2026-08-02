@@ -19,7 +19,12 @@ repo for the full setup.
 - **Tester:** use the `tester` skill. Register your handle once per
   session (role="tester"), then check your inbox for test tasks the same
   way a Developer checks for coding tasks.
-- All three roles are plain, interactive `claude` sessions — nothing stops
+- **Analyst:** use the `analyst` skill. Register your handle once per
+  session (role="analyst"), then check your inbox for clarification or
+  research requests. Doesn't write or edit code — clarifies ambiguous
+  requirements, researches open questions, and reviews task/test outcomes
+  for patterns across the project.
+- All four roles are plain, interactive `claude` sessions — nothing stops
   you from calling any TeamHub tool directly, whether or not the skill's
   default flow covers what you're doing right now.
 
@@ -88,8 +93,8 @@ your code or git history. That's handled entirely by the tools below.
 
 ## Skills reference
 
-- `team-lead`, `team-developer`, `tester`, `project-planner` — install from
-  `.claude/skills/` (copied in) or via the Spyder marketplace:
+- `team-lead`, `team-developer`, `tester`, `analyst`, `project-planner` —
+  install from `.claude/skills/` (copied in) or via the Spyder marketplace:
   `/plugin marketplace add masterdeepak15/Spyder` then
   `/plugin install teamhub-team@spyder`.
 - Full worked examples: `docs/example-walkthrough.md` and

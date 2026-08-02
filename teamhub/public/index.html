@@ -8,7 +8,16 @@
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<div class="app">
+<div class="login-screen hidden" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <span class="logo">TeamHub</span>
+    <p class="login-sub">Enter the shared token to continue.</p>
+    <input type="password" id="loginToken" placeholder="Token" autocomplete="current-password" autofocus />
+    <button type="submit">Log in</button>
+    <p class="login-error" id="loginError"></p>
+  </form>
+</div>
+<div class="app hidden" id="app">
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="logo">TeamHub</span>
@@ -33,6 +42,7 @@
       <div class="topbar-right">
         <span class="conn-dot" id="connDot" title="Live update connection status"></span>
         <span class="identity">Acting as <strong>Owner</strong></span>
+        <button class="logout-btn" id="logoutBtn">Log out</button>
       </div>
     </header>
     <main class="content" id="content"></main>

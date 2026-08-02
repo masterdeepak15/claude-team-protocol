@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 export interface RunnerArgs {
-  role: "master" | "developer" | "tester";
+  role: "master" | "developer" | "tester" | "analyst";
   project: string;
   handle: string;
   masterHandle?: string;
@@ -22,7 +22,7 @@ export function parseArgs(argv: string[]): RunnerArgs {
       i++;
     }
   }
-  if (raw.role !== "master" && raw.role !== "developer" && raw.role !== "tester") {
+  if (raw.role !== "master" && raw.role !== "developer" && raw.role !== "tester" && raw.role !== "analyst") {
     throw new Error(`--role must be "master", "developer", or "tester", got "${raw.role}"`);
   }
   if (!raw.project) throw new Error("--project is required");
@@ -30,7 +30,7 @@ export function parseArgs(argv: string[]): RunnerArgs {
   if (raw.mode !== undefined && raw.mode !== "auto" && raw.mode !== "manual") {
     throw new Error(`--mode must be "auto" or "manual", got "${raw.mode}"`);
   }
-  if ((raw.role === "developer" || raw.role === "tester") && !raw["master-handle"]) {
+  if ((raw.role === "developer" || raw.role === "tester" || raw.role === "analyst") && !raw["master-handle"]) {
     // Without this, args.masterHandle is undefined and every prompt this
     // runner sends ends up literally containing the text "undefined" where
     // the Lead's handle should be — a confusing, silent failure mode.
@@ -99,12 +99,25 @@ const ALLOWED_TOOLS_WORKER =
   "mcp__teamhub__report_status,mcp__teamhub__get_task,mcp__teamhub__update_task_status," +
   "mcp__teamhub__add_comment,mcp__teamhub__set_mode,mcp__github__*,Read,Edit,Bash";
 
+// Analyst deliberately has no Edit/Bash — it clarifies requirements,
+// researches open questions, and reviews task/test outcomes for patterns,
+// but doesn't write code. Read (to actually look at code/test output when
+// reviewing) and WebSearch/WebFetch (for research) stand in for Edit/Bash.
+const ALLOWED_TOOLS_ANALYST =
+  "mcp__teamhub__register,mcp__teamhub__send_message,mcp__teamhub__check_inbox," +
+  "mcp__teamhub__report_status,mcp__teamhub__get_task,mcp__teamhub__list_tasks," +
+  "mcp__teamhub__list_team,mcp__teamhub__add_comment,mcp__teamhub__set_mode," +
+  "mcp__github__*,Read,WebSearch,WebFetch";
+
 export function kickoffPrompt(args: RunnerArgs): string {
   if (args.role === "master") {
     return `You are the Team Lead for project "${args.project}". Your handle is "${args.handle}". First, call the teamhub register tool with handle="${args.handle}", role="master", project_id="${args.project}". Then check your task tracker for open backlog items in this project and summarize them.`;
   }
   if (args.role === "tester") {
     return `You are a Tester on project "${args.project}". Your handle is "${args.handle}", your Team Lead's handle is "${args.masterHandle}". First, call the teamhub register tool with handle="${args.handle}", role="tester", project_id="${args.project}", mode="${args.mode}". Then check your inbox for an assigned test task.`;
+  }
+  if (args.role === "analyst") {
+    return `You are an Analyst on project "${args.project}". Your handle is "${args.handle}", your Team Lead's handle is "${args.masterHandle}". First, call the teamhub register tool with handle="${args.handle}", role="analyst", project_id="${args.project}", mode="${args.mode}". Then check your inbox for a research/clarification request, and skim the project's open tasks for anything ambiguous the Lead should know about before assigning it.`;
   }
   return `You are a Developer on project "${args.project}". Your handle is "${args.handle}", your Team Lead's handle is "${args.masterHandle}". First, call the teamhub register tool with handle="${args.handle}", role="developer", project_id="${args.project}", mode="${args.mode}". Then check your inbox for an assigned task.`;
 }
@@ -131,6 +144,20 @@ export function cyclePrompt(args: RunnerArgs): string {
       `bugs you find as comments or new tasks. Update the task status as you go, and call ` +
       `report_status with your test results so "${args.masterHandle}" is notified. If you're stuck, ` +
       `send_message to "${args.masterHandle}" and check back next cycle for a reply.`
+    );
+  }
+  if (args.role === "analyst") {
+    return (
+      `Check your teamhub inbox (handle="${args.handle}"). For EVERY unread message — a research ` +
+      `or clarification request, a question, or anything from "owner" (the human operator) — you ` +
+      `MUST reply to that exact sender with send_message before finishing this turn, even a short ` +
+      `acknowledgment. Never leave a message read-but-unanswered. When asked to clarify requirements, ` +
+      `don't guess or invent details — read the relevant tasks/comments, do any research needed ` +
+      `(WebSearch/WebFetch), and give a clear, specific answer or a short list of open questions back ` +
+      `to whoever asked, especially "${args.masterHandle}". When reviewing outcomes, look across ` +
+      `multiple related tasks (list_tasks) for patterns — e.g. several bugs sharing a root cause — ` +
+      `rather than one task in isolation, and add_comment with what you found. You don't write or ` +
+      `edit code; if something needs a code fix, say so in your reply instead of attempting it.`
     );
   }
   return (
@@ -353,11 +380,13 @@ export async function runInterruptibleCycle(
 // Polls TeamHub directly over MCP (not by shelling out to `claude`) so the
 // watchdog can check for an interrupt every few seconds without spawning a
 // whole extra `claude -p` process per tick.
-export async function pollForInterrupt(teamhubUrl: string, handle: string): Promise<string | undefined> {
+export async function pollForInterrupt(teamhubUrl: string, handle: string, token: string): Promise<string | undefined> {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
   const client = new Client({ name: "teamhub-runner-watchdog", version: "1.0.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(teamhubUrl));
+  const transport = new StreamableHTTPClientTransport(new URL(teamhubUrl), {
+    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+  });
   await client.connect(transport);
   try {
     const result = await client.callTool({ name: "check_interrupt", arguments: { handle } });
@@ -370,41 +399,66 @@ export async function pollForInterrupt(teamhubUrl: string, handle: string): Prom
   }
 }
 
-// Same idea as pollForInterrupt: talks to TeamHub directly over MCP, no
-// Claude spawn, no tokens. Called once per sleep interval in the main loop
-// to decide whether a real (token-costing) cycle is worth running at all.
-export async function pollForPendingWork(
-  teamhubUrl: string,
-  role: "master" | "developer" | "tester",
+// Long-polls TeamHub's /api/wait-for-work over plain HTTP — not MCP, and
+// deliberately not a fixed sleep-then-ask interval either. The request
+// itself blocks server-side (see teamhub/api.ts) until either this handle
+// actually has something pending, or `timeoutMs` elapses, whichever comes
+// first. That means: no Claude spawned and no tokens spent while idle
+// (same as before), but now also no wasted round trips at all when quiet,
+// and reaction time is bounded by the event arriving, not by whatever the
+// polling interval happened to be.
+export async function waitForPendingWork(
+  teamhubBaseUrl: string,
+  role: "master" | "developer" | "tester" | "analyst",
   handle: string,
-  project: string
+  project: string,
+  token: string,
+  timeoutMs: number
 ): Promise<boolean> {
-  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-  const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
-  const client = new Client({ name: "teamhub-runner-gate", version: "1.0.0" });
-  const transport = new StreamableHTTPClientTransport(new URL(teamhubUrl));
-  await client.connect(transport);
-  try {
-    const result = await client.callTool({
-      name: "has_pending_work",
-      arguments: { role, handle, project_id: project },
-    });
-    const content = (result.content as Array<{ type: string; text?: string }> | undefined)?.[0];
-    return content?.text === "pending";
-  } finally {
-    await client.close();
+  const url = new URL("/api/wait-for-work", teamhubBaseUrl);
+  url.searchParams.set("role", role);
+  url.searchParams.set("handle", handle);
+  url.searchParams.set("project_id", project);
+  url.searchParams.set("timeoutMs", String(timeoutMs));
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    throw new Error(`wait-for-work request failed: ${res.status} ${await res.text()}`);
   }
+  const body = (await res.json()) as { pending: boolean };
+  return Boolean(body.pending);
 }
 
 function teamhubUrlFromEnv(): string {
   return process.env.TEAMHUB_URL || `http://localhost:${process.env.TEAMHUB_PORT || 8787}/mcp`;
 }
 
+// /mcp and /api/wait-for-work live on the same TeamHub server; TEAMHUB_URL
+// is documented (and used in .mcp.json) as the /mcp endpoint specifically,
+// so the base URL for other HTTP routes is that with /mcp stripped off.
+function teamhubBaseUrlFromEnv(): string {
+  return teamhubUrlFromEnv().replace(/\/mcp\/?$/, "");
+}
+
+function teamhubTokenFromEnv(): string {
+  const token = process.env.TEAMHUB_TOKEN;
+  if (!token) {
+    throw new Error(
+      "TEAMHUB_TOKEN environment variable is required — the shared token TeamHub printed at startup " +
+        "(also saved to ~/.teamhub/teamhub.token on the machine running the server). Set it before " +
+        "running the agent, e.g. TEAMHUB_TOKEN=... teamhub agent --role master ..."
+    );
+  }
+  return token;
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const args = parseArgs(argv);
-  const allowedTools = args.role === "master" ? ALLOWED_TOOLS_MASTER : ALLOWED_TOOLS_WORKER;
+  const allowedTools =
+    args.role === "master" ? ALLOWED_TOOLS_MASTER : args.role === "analyst" ? ALLOWED_TOOLS_ANALYST : ALLOWED_TOOLS_WORKER;
   const permissionMode = permissionModeFor(args);
   const teamhubUrl = teamhubUrlFromEnv();
+  const teamhubBaseUrl = teamhubBaseUrlFromEnv();
+  const token = teamhubTokenFromEnv();
   const watchdogEnabled = args.role !== "master" && args.mode === "auto";
 
   console.log(
@@ -446,11 +500,22 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   }
 
   for (;;) {
-    await new Promise((resolve) => setTimeout(resolve, args.cycle * 1000));
     try {
-      const pending = await pollForPendingWork(teamhubUrl, args.role, args.handle, args.project);
+      // Blocks here — no sleep, no fixed interval — until TeamHub reports
+      // this handle actually has something pending, or args.cycle (now a
+      // long-poll timeout/reconnect ceiling, not a literal sleep duration)
+      // elapses. Either way this call itself costs nothing: no claude
+      // process, no tokens, whether it returns in 50ms or the full timeout.
+      const pending = await waitForPendingWork(
+        teamhubBaseUrl,
+        args.role,
+        args.handle,
+        args.project,
+        token,
+        args.cycle * 1000
+      );
       if (!pending) {
-        console.log(`${args.handle}: idle, nothing pending — skipping this cycle (no tokens used).`);
+        console.log(`${args.handle}: still idle after waiting — reconnecting to wait again (no tokens used).`);
         continue;
       }
       if (watchdogEnabled) {
@@ -459,7 +524,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
           args.handle,
           allowedTools,
           permissionMode,
-          () => pollForInterrupt(teamhubUrl, args.handle),
+          () => pollForInterrupt(teamhubUrl, args.handle, token),
           args.watchdogInterval * 1000
         );
         if (outcome.interrupted && outcome.interruptText) {
@@ -470,7 +535,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         await runCycle(cyclePrompt(args), args.handle, allowedTools, permissionMode);
       }
     } catch (err) {
-      console.error("Cycle failed, will retry next cycle:", err);
+      // Most likely a transient network hiccup talking to TeamHub (not a
+      // cycle failure — those are caught separately inside runCycle's
+      // callers above). A short fixed backoff keeps this from becoming a
+      // tight, silent, CPU-spinning retry loop if TeamHub is down for a
+      // while.
+      console.error(`${args.handle}: wait-for-work failed, retrying in 5s:`, err);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
 }

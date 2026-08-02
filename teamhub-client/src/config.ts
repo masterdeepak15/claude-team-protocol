@@ -12,6 +12,7 @@ export function configFilePath(): string {
 
 export interface ClientConfig {
   serverUrl: string;
+  token?: string;
 }
 
 // Pure parser — takes the config file's raw content (or undefined if it
@@ -22,7 +23,8 @@ export function parseConfig(raw: string | undefined): ClientConfig | undefined {
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw);
-    return typeof parsed.serverUrl === "string" ? { serverUrl: parsed.serverUrl } : undefined;
+    if (typeof parsed.serverUrl !== "string") return undefined;
+    return { serverUrl: parsed.serverUrl, token: typeof parsed.token === "string" ? parsed.token : undefined };
   } catch {
     return undefined;
   }

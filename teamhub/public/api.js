@@ -1,7 +1,19 @@
 const BASE = "/api";
 
+let onUnauthorized = () => {};
+// app.js registers a callback so any 401 anywhere (not just the initial
+// load — a session can also expire mid-use) bounces back to the login
+// screen instead of every view silently failing its own fetch calls.
+export function setUnauthorizedHandler(fn) {
+  onUnauthorized = fn;
+}
+
 async function request(path, options) {
   const res = await fetch(BASE + path, options);
+  if (res.status === 401 && path !== "/login") {
+    onUnauthorized();
+    throw new Error("Not logged in.");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Request failed: ${res.status}`);
@@ -10,6 +22,14 @@ async function request(path, options) {
 }
 
 export const api = {
+  session: () => request("/session"),
+  login: (token) =>
+    request("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }),
+  logout: () => request("/logout", { method: "POST" }),
   listProjects: () => request("/projects"),
   getProject: (id) => request(`/projects/${encodeURIComponent(id)}`),
   listMembers: (id) => request(`/projects/${encodeURIComponent(id)}/members`),

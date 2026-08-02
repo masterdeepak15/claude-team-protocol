@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as readline from "node:readline";
+import { getOrCreateToken } from "../teamhub/auth.js";
 
 const __dirname_ = dirname(fileURLToPath(import.meta.url));
 // dist/cli/teamhub-cli.js -> package root (two levels up)
@@ -75,17 +76,23 @@ export function tailLines(content: string, n: number): string {
   return lines.slice(Math.max(0, lines.length - n)).join("\n");
 }
 
-export function mergeMcpConfig(existing: any, teamhubUrl: string): any {
+export function mergeMcpConfig(existing: any, teamhubUrl: string, token: string): any {
   const base = existing && typeof existing === "object" ? existing : {};
   const mcpServers = { ...(base.mcpServers ?? {}) };
-  mcpServers.teamhub = { type: "http", url: teamhubUrl };
+  mcpServers.teamhub = { type: "http", url: teamhubUrl, headers: { Authorization: `Bearer ${token}` } };
   return { ...base, mcpServers };
 }
 
-export function mergeDesktopMcpConfig(existing: any, teamhubUrl: string): any {
+export function mergeDesktopMcpConfig(existing: any, teamhubUrl: string, token: string): any {
   const base = existing && typeof existing === "object" ? existing : {};
   const mcpServers = { ...(base.mcpServers ?? {}) };
-  mcpServers.teamhub = { command: "npx", args: ["-y", "mcp-remote", teamhubUrl] };
+  // mcp-remote (the stdio<->HTTP bridge Claude Desktop needs, since it
+  // can't speak our "http" transport type directly) takes custom headers
+  // via repeated --header "Name: Value" args.
+  mcpServers.teamhub = {
+    command: "npx",
+    args: ["-y", "mcp-remote", teamhubUrl, "--header", `Authorization: Bearer ${token}`],
+  };
   return { ...base, mcpServers };
 }
 
@@ -173,7 +180,7 @@ Commands:
       Set up TeamHub in the current directory / on this machine. With no
       flags, prompts interactively for each optional step. With any flag
       given, runs non-interactively using only the flags you passed.
-        --skills     copy team-lead/team-developer/tester/project-planner into ./.claude/skills
+        --skills     copy team-lead/team-developer/tester/analyst/project-planner into ./.claude/skills
         --mcp        add a teamhub entry to ./.mcp.json
         --desktop    add a teamhub entry to Claude Desktop's config (via mcp-remote)
         --autostart  register TeamHub to start at login/boot (Task Scheduler / launchd / systemd)
@@ -190,13 +197,17 @@ Commands:
   logs [--lines <n>] [--follow]
       Print the TeamHub server's log output (default last 50 lines).
 
-  agent --role <master|developer|tester> --project <id> --handle <name> [--master-handle <name>] [--mode auto|manual] [--cycle <seconds>] [--watchdog-interval <seconds>]
-      Run a headless (unattended) Master, Developer, or Tester loop in the
-      CURRENT directory — no repo checkout needed. Uses this same directory
-      for its session-tracking file and for all the Read/Edit/Bash work the
-      loop does, so cd into the actual project you want it working on first.
-      Set TEAMHUB_URL if TeamHub runs on a different machine (used by
-      --mode auto's interrupt watchdog).
+  agent --role <master|developer|tester|analyst> --project <id> --handle <name> [--master-handle <name>] [--mode auto|manual] [--cycle <seconds>] [--watchdog-interval <seconds>]
+      Run a headless (unattended) Master, Developer, Tester, or Analyst loop
+      in the CURRENT directory — no repo checkout needed. Uses this same
+      directory for its session-tracking file and for all the Read/Edit/Bash
+      work the loop does, so cd into the actual project you want it working
+      on first. Requires TEAMHUB_TOKEN (see \`teamhub token\`). Set
+      TEAMHUB_URL if TeamHub runs on a different machine.
+
+  token
+      Print the shared auth token (generating one on first use). Every
+      other machine needs this to reach this server's /mcp and dashboard.
 
   uninstall-autostart
       Remove the auto-start registration created by \`install --autostart\`.
@@ -249,7 +260,7 @@ function desktopConfigPath(): string {
 }
 
 function copySkills(targetDir: string): string[] {
-  const skillNames = ["team-lead", "team-developer", "tester", "project-planner"];
+  const skillNames = ["team-lead", "team-developer", "tester", "analyst", "project-planner"];
   const copied: string[] = [];
   for (const name of skillNames) {
     const src = join(PACKAGE_ROOT, "skills", name);
@@ -274,18 +285,18 @@ function readJsonFileOrEmpty(path: string): any {
   }
 }
 
-function updateMcpJsonFile(targetDir: string, teamhubUrl: string): string {
+function updateMcpJsonFile(targetDir: string, teamhubUrl: string, token: string): string {
   const mcpPath = join(targetDir, ".mcp.json");
   const existing = readJsonFileOrEmpty(mcpPath);
-  writeFileSync(mcpPath, JSON.stringify(mergeMcpConfig(existing, teamhubUrl), null, 2) + "\n");
+  writeFileSync(mcpPath, JSON.stringify(mergeMcpConfig(existing, teamhubUrl, token), null, 2) + "\n");
   return mcpPath;
 }
 
-function updateDesktopConfigFile(teamhubUrl: string): string {
+function updateDesktopConfigFile(teamhubUrl: string, token: string): string {
   const path = desktopConfigPath();
   mkdirSync(dirname(path), { recursive: true });
   const existing = readJsonFileOrEmpty(path);
-  writeFileSync(path, JSON.stringify(mergeDesktopMcpConfig(existing, teamhubUrl), null, 2) + "\n");
+  writeFileSync(path, JSON.stringify(mergeDesktopMcpConfig(existing, teamhubUrl, token), null, 2) + "\n");
   return path;
 }
 
@@ -547,10 +558,11 @@ async function runInstall(flags: Flags): Promise<void> {
   const port = Number(flags.port ?? 8787);
   const teamhubUrl = typeof flags.url === "string" ? flags.url : `http://localhost:${port}/mcp`;
   const dbPath = typeof flags.db === "string" ? flags.db : undefined;
+  const token = getOrCreateToken();
 
   const explicit = "skills" in flags || "mcp" in flags || "desktop" in flags || "autostart" in flags;
 
-  const wantSkills = explicit ? flags.skills === true : await promptYesNo("Install team-lead/team-developer/tester/project-planner skills into ./.claude/skills?");
+  const wantSkills = explicit ? flags.skills === true : await promptYesNo("Install team-lead/team-developer/tester/analyst/project-planner skills into ./.claude/skills?");
   const wantMcp = explicit ? flags.mcp === true : await promptYesNo("Add a teamhub entry to ./.mcp.json?");
   const wantDesktop = explicit ? flags.desktop === true : await promptYesNo("Also wire up Claude Desktop (via mcp-remote)?");
   const wantAutostart = explicit ? flags.autostart === true : await promptYesNo("Start TeamHub automatically on login/startup?");
@@ -560,13 +572,20 @@ async function runInstall(flags: Flags): Promise<void> {
     console.log(`Installed skills: ${copied.join(", ") || "(none found in this package)"}`);
   }
   if (wantMcp) {
-    console.log(`Added teamhub to ${updateMcpJsonFile(targetDir, teamhubUrl)}`);
+    console.log(`Added teamhub to ${updateMcpJsonFile(targetDir, teamhubUrl, token)}`);
   }
   if (wantDesktop) {
-    console.log(`Added teamhub to Claude Desktop's config: ${updateDesktopConfigFile(teamhubUrl)}`);
+    console.log(`Added teamhub to Claude Desktop's config: ${updateDesktopConfigFile(teamhubUrl, token)}`);
   }
   if (wantAutostart) {
     installAutostart(port, dbPath);
+  }
+  if (wantMcp || wantDesktop) {
+    console.log("");
+    console.log(`Shared auth token: ${token}`);
+    console.log(`Every other machine (developer/tester PCs) needs this — as their own .mcp.json`);
+    console.log(`"Authorization: Bearer" header, and as their TEAMHUB_TOKEN env var for`);
+    console.log(`"teamhub agent"/"teamhub-client agent". Run "teamhub token" anytime to see it again.`);
   }
   console.log("\nRun `teamhub start` to start the server now.");
 }
@@ -590,6 +609,13 @@ export async function main(argv: string[]): Promise<void> {
       break;
     case "logs":
       showLogs(Number(flags.lines ?? 50), flags.follow === true);
+      break;
+    case "token":
+      console.log(getOrCreateToken());
+      console.log("");
+      console.log("Give this to any other machine (developer/tester PCs, Claude Desktop) that needs to");
+      console.log("reach this TeamHub server — as their .mcp.json Authorization: Bearer header, and as");
+      console.log("TEAMHUB_TOKEN for teamhub/teamhub-client agent commands.");
       break;
     case "uninstall-autostart":
       uninstallAutostart();

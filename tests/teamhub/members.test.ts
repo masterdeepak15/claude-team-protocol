@@ -103,3 +103,28 @@ describe("reserved owner handle", () => {
     expect(() => registerMember("OWNER", "proj-members-owner", "master")).toThrow();
   });
 });
+
+describe("presence (online/offline)", () => {
+  it("listTeam reports online: true for a just-registered/touched member, false once stale", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, touchMember, listTeam } = await import("../../teamhub/members.js");
+    createProject("proj-members-presence", "Members Presence Project", "PMP");
+    registerMember("dev-presence-a", "proj-members-presence", "developer");
+
+    const fresh = listTeam("proj-members-presence").find((m) => m.handle === "dev-presence-a");
+    expect(fresh?.online).toBe(true);
+
+    // Simulate a stale last_seen well past the online threshold, the same
+    // way a killed/crashed runner that stopped checking in would look.
+    const { db } = await import("../../teamhub/db.js");
+    const staleTs = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    db.prepare(`UPDATE members SET last_seen = ? WHERE handle = ?`).run(staleTs, "dev-presence-a");
+
+    const stale = listTeam("proj-members-presence").find((m) => m.handle === "dev-presence-a");
+    expect(stale?.online).toBe(false);
+
+    touchMember("dev-presence-a");
+    const touched = listTeam("proj-members-presence").find((m) => m.handle === "dev-presence-a");
+    expect(touched?.online).toBe(true);
+  });
+});

@@ -30,13 +30,13 @@ Commands:
   install [--skills] [--mcp] [--desktop]
       Set up the CURRENT directory / this machine to use the connected
       server. Requires \`connect\` to have been run first.
-        --skills     copy team-lead/team-developer/tester/project-planner into ./.claude/skills
+        --skills     copy team-lead/team-developer/tester/analyst/project-planner into ./.claude/skills
         --mcp        add a teamhub entry to ./.mcp.json, pointing at the connected server
         --desktop    add a teamhub entry to Claude Desktop's config (via mcp-remote)
       With no flags, prompts interactively for each step. With any flag
       given, runs non-interactively — only what you passed happens.
 
-  agent --role <master|developer|tester> --project <id> --handle <name> [--master-handle <name>] [--mode auto|manual] [--cycle <seconds>] [--watchdog-interval <seconds>]
+  agent --role <master|developer|tester|analyst> --project <id> --handle <name> [--master-handle <name>] [--mode auto|manual] [--cycle <seconds>] [--watchdog-interval <seconds>]
       Run a headless, unattended Claude Code session for one of the three
       roles, talking to the connected server (or TEAMHUB_URL, if set,
       which takes precedence). Run this FROM the project directory you
@@ -87,16 +87,17 @@ async function checkHealth(serverUrl: string): Promise<string> {
   }
 }
 
-async function connectCommand(input: string | undefined): Promise<void> {
-  if (!input) {
-    console.error("Usage: teamhub-client connect <host:port|url>");
+async function connectCommand(input: string | undefined, token: string | undefined): Promise<void> {
+  if (!input || !token) {
+    console.error("Usage: teamhub-client connect <host:port|url> <token>");
+    console.error("The token is printed by `teamhub token` on the machine running the TeamHub server.");
     process.exitCode = 1;
     return;
   }
   const serverUrl = normalizeServerInput(input);
   console.log(`Checking ${serverUrl}/health ...`);
   console.log(await checkHealth(serverUrl));
-  writeConfig({ serverUrl });
+  writeConfig({ serverUrl, token });
   console.log(`Connected. Server saved: ${serverUrl}`);
 }
 
@@ -111,7 +112,7 @@ async function statusCommand(): Promise<void> {
 }
 
 function copySkills(targetDir: string): string[] {
-  const skillNames = ["team-lead", "team-developer", "tester", "project-planner"];
+  const skillNames = ["team-lead", "team-developer", "tester", "analyst", "project-planner"];
   const copied: string[] = [];
   for (const name of skillNames) {
     const src = join(PACKAGE_ROOT, "skills", name);
@@ -147,25 +148,34 @@ function readJsonFileOrEmpty(path: string): any {
   }
 }
 
-function updateMcpJsonFile(targetDir: string, teamhubUrl: string): string {
+function updateMcpJsonFile(targetDir: string, teamhubUrl: string, token: string): string {
   const mcpPath = join(targetDir, ".mcp.json");
   const existing = readJsonFileOrEmpty(mcpPath);
-  writeFileSync(mcpPath, JSON.stringify(mergeMcpConfig(existing, teamhubUrl), null, 2) + "\n");
+  writeFileSync(mcpPath, JSON.stringify(mergeMcpConfig(existing, teamhubUrl, token), null, 2) + "\n");
   return mcpPath;
 }
 
-function updateDesktopConfigFile(teamhubUrl: string): string {
+function updateDesktopConfigFile(teamhubUrl: string, token: string): string {
   const path = desktopConfigPath();
   mkdirSync(dirname(path), { recursive: true });
   const existing = readJsonFileOrEmpty(path);
-  writeFileSync(path, JSON.stringify(mergeDesktopMcpConfig(existing, teamhubUrl), null, 2) + "\n");
+  writeFileSync(path, JSON.stringify(mergeDesktopMcpConfig(existing, teamhubUrl, token), null, 2) + "\n");
   return path;
 }
 
 async function installCommand(flags: Flags): Promise<void> {
   const config = readConfig();
   if (!config) {
-    console.error("Not connected. Run `teamhub-client connect <host:port>` first.");
+    console.error("Not connected. Run `teamhub-client connect <host:port> <token>` first.");
+    process.exitCode = 1;
+    return;
+  }
+  if (!config.token) {
+    console.error(
+      "Connected, but no token was saved (an older `connect` run?). Re-run " +
+        "`teamhub-client connect <host:port> <token>` with the token from `teamhub token` " +
+        "on the server machine."
+    );
     process.exitCode = 1;
     return;
   }
@@ -175,7 +185,7 @@ async function installCommand(flags: Flags): Promise<void> {
 
   const wantSkills = explicit
     ? flags.skills === true
-    : await promptYesNo("Install team-lead/team-developer/tester/project-planner skills into ./.claude/skills?");
+    : await promptYesNo("Install team-lead/team-developer/tester/analyst/project-planner skills into ./.claude/skills?");
   const wantMcp = explicit
     ? flags.mcp === true
     : await promptYesNo(`Add a teamhub entry to ./.mcp.json (${teamhubUrl})?`);
@@ -188,11 +198,15 @@ async function installCommand(flags: Flags): Promise<void> {
     console.log(`Installed skills: ${copied.join(", ") || "(none found in this package)"}`);
   }
   if (wantMcp) {
-    console.log(`Added teamhub to ${updateMcpJsonFile(targetDir, teamhubUrl)}`);
+    console.log(`Added teamhub to ${updateMcpJsonFile(targetDir, teamhubUrl, config.token)}`);
   }
   if (wantDesktop) {
-    console.log(`Added teamhub to Claude Desktop's config: ${updateDesktopConfigFile(teamhubUrl)}`);
+    console.log(`Added teamhub to Claude Desktop's config: ${updateDesktopConfigFile(teamhubUrl, config.token)}`);
   }
+  console.log(
+    `\n\`teamhub-client agent ...\` will use this token automatically (no need to export ` +
+      `TEAMHUB_TOKEN yourself, unless you want to override it).`
+  );
   console.log(
     "\nDone. Open `claude` here interactively, or run `teamhub-client agent --role ... --project ... --handle ...` for a headless session."
   );
@@ -204,7 +218,7 @@ export async function main(argv: string[]): Promise<void> {
 
   switch (command) {
     case "connect":
-      await connectCommand(rest[0]);
+      await connectCommand(rest[0], rest[1]);
       break;
     case "status":
       await statusCommand();
@@ -213,6 +227,10 @@ export async function main(argv: string[]): Promise<void> {
       await installCommand(flags);
       break;
     case "agent":
+      if (!process.env.TEAMHUB_TOKEN) {
+        const config = readConfig();
+        if (config?.token) process.env.TEAMHUB_TOKEN = config.token;
+      }
       await runAgent(rest);
       break;
     case "help":

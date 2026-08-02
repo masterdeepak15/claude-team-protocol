@@ -132,18 +132,31 @@ could via `send_message`.
 
 ## Step 3 — Point every machine's `.mcp.json` at the TeamHub host
 
+Every request to TeamHub now requires the shared token `teamhub token`
+prints (generated automatically on first use, on whichever machine runs
+the server). Run that command there to get it, then use it on every other
+machine below.
+
 On every machine (the one running TeamHub, and every developer PC):
 
 ```json
 {
   "mcpServers": {
-    "teamhub": { "type": "http", "url": "http://192.168.1.20:8787/mcp" },
+    "teamhub": {
+      "type": "http",
+      "url": "http://192.168.1.20:8787/mcp",
+      "headers": { "Authorization": "Bearer <token from `teamhub token`>" }
+    },
     "github":  { "...": "your existing GitHub MCP config" }
   }
 }
 ```
 
 Replace `192.168.1.20` with the TeamHub host's real LAN IP.
+`teamhub install`/`teamhub connect` on the server machine itself already
+generate this automatically with the header included — the manual version
+above is only for hand-editing or a machine you're not running `install`
+on.
 
 ### Step 3b — Client-only machines (most Developer/Tester PCs)
 
@@ -157,12 +170,18 @@ installed, since a client never touches SQLite at all.
 ```bash
 npm install -g @masterdeepak15/teamhub-client
 
-# One-time: point at the server (verifies reachability, saves either way)
-teamhub-client connect 192.168.1.20:8787
+# One-time: point at the server AND save the shared token (from `teamhub
+# token` on the server machine) — both are required now.
+teamhub-client connect 192.168.1.20:8787 <token>
 
 # From the project directory this machine will work on:
 teamhub-client install --skills --mcp
 ```
+
+`teamhub-client install` embeds the saved token into `.mcp.json`
+automatically, and `teamhub-client agent` picks it up from the same saved
+config — TEAMHUB_TOKEN only needs setting by hand if you want to override
+it for one run.
 
 `install` uses the server you connected to — no need to repeat the URL.
 From here, everything else in this guide works identically: open `claude`

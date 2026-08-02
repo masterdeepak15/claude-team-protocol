@@ -39,39 +39,42 @@ describe("tailLines", () => {
 });
 
 describe("mergeMcpConfig", () => {
-  it("adds a teamhub entry to an empty config", () => {
-    const merged = mergeMcpConfig(undefined, "http://192.168.1.20:8787/mcp");
+  it("adds a teamhub entry to an empty config, including the auth header", () => {
+    const merged = mergeMcpConfig(undefined, "http://192.168.1.20:8787/mcp", "shh-token");
     expect(merged).toEqual({
-      mcpServers: { teamhub: { type: "http", url: "http://192.168.1.20:8787/mcp" } },
+      mcpServers: {
+        teamhub: { type: "http", url: "http://192.168.1.20:8787/mcp", headers: { Authorization: "Bearer shh-token" } },
+      },
     });
   });
 
   it("preserves existing mcpServers entries", () => {
     const existing = { mcpServers: { github: { type: "http", url: "http://example.com/mcp" } } };
-    const merged = mergeMcpConfig(existing, "http://192.168.1.20:8787/mcp");
+    const merged = mergeMcpConfig(existing, "http://192.168.1.20:8787/mcp", "shh-token");
     expect(merged.mcpServers.github).toEqual({ type: "http", url: "http://example.com/mcp" });
-    expect(merged.mcpServers.teamhub).toEqual({ type: "http", url: "http://192.168.1.20:8787/mcp" });
+    expect(merged.mcpServers.teamhub.url).toBe("http://192.168.1.20:8787/mcp");
+    expect(merged.mcpServers.teamhub.headers.Authorization).toBe("Bearer shh-token");
   });
 
   it("overwrites a pre-existing teamhub entry", () => {
     const existing = { mcpServers: { teamhub: { type: "http", url: "http://old-host:8787/mcp" } } };
-    const merged = mergeMcpConfig(existing, "http://new-host:8787/mcp");
+    const merged = mergeMcpConfig(existing, "http://new-host:8787/mcp", "shh-token");
     expect(merged.mcpServers.teamhub.url).toBe("http://new-host:8787/mcp");
   });
 });
 
 describe("mergeDesktopMcpConfig", () => {
-  it("adds a command-based teamhub entry using mcp-remote", () => {
-    const merged = mergeDesktopMcpConfig(undefined, "http://192.168.1.20:8787/mcp");
+  it("adds a command-based teamhub entry using mcp-remote with the auth header", () => {
+    const merged = mergeDesktopMcpConfig(undefined, "http://192.168.1.20:8787/mcp", "shh-token");
     expect(merged.mcpServers.teamhub).toEqual({
       command: "npx",
-      args: ["-y", "mcp-remote", "http://192.168.1.20:8787/mcp"],
+      args: ["-y", "mcp-remote", "http://192.168.1.20:8787/mcp", "--header", "Authorization: Bearer shh-token"],
     });
   });
 
   it("preserves other existing entries", () => {
     const existing = { mcpServers: { other: { command: "node", args: ["x.js"] } } };
-    const merged = mergeDesktopMcpConfig(existing, "http://192.168.1.20:8787/mcp");
+    const merged = mergeDesktopMcpConfig(existing, "http://192.168.1.20:8787/mcp", "shh-token");
     expect(merged.mcpServers.other).toEqual({ command: "node", args: ["x.js"] });
   });
 });
@@ -150,7 +153,7 @@ describe("parseMeta", () => {
 describe("helpText", () => {
   it("mentions every command", () => {
     const text = helpText();
-    for (const cmd of ["install", "start", "stop", "status", "logs", "agent", "upgrade", "uninstall", "help"]) {
+    for (const cmd of ["install", "start", "stop", "status", "logs", "agent", "token", "upgrade", "uninstall", "help"]) {
       expect(text).toContain(cmd);
     }
   });
