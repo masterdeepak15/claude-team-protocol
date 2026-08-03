@@ -8,6 +8,8 @@ import {
   redirectPrompt,
   runInterruptibleCycle,
   logStreamEvent,
+  usageLimitBackoffMs,
+  parseResetDelayMs,
 } from "../../agents/runner.js";
 
 describe("parseArgs", () => {
@@ -303,6 +305,51 @@ describe("runInterruptibleCycle", () => {
     expect(outcome).toEqual({ interrupted: false });
     expect(calls).toBeGreaterThanOrEqual(3);
     expect(killSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("parseResetDelayMs", () => {
+  it("computes the delay until the next occurrence of a resets time in a named zone", () => {
+    // 2026-08-03T05:00:00Z is 10:30am in Asia/Calcutta (UTC+5:30); a
+    // "resets 2:30pm" notice should land 4 hours later the same day.
+    const now = new Date("2026-08-03T05:00:00Z");
+    const ms = parseResetDelayMs("You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)", now);
+    expect(ms).toBe(4 * 60 * 60 * 1000);
+  });
+
+  it("rolls over to the next day when the reset time has already passed today", () => {
+    // 2026-08-03T13:00:00Z is 6:30pm in Asia/Calcutta — after 2:30pm, so
+    // the next reset is tomorrow at 2:30pm local, 20h away.
+    const now = new Date("2026-08-03T13:00:00Z");
+    const ms = parseResetDelayMs("resets 2:30pm (Asia/Calcutta)", now);
+    expect(ms).toBe(20 * 60 * 60 * 1000);
+  });
+
+  it("returns undefined when there's no resets/timezone clause to parse", () => {
+    expect(parseResetDelayMs("You've hit your weekly limit.")).toBeUndefined();
+  });
+
+  it("returns undefined for an unrecognized timezone name", () => {
+    expect(parseResetDelayMs("resets 2:30pm (Not/AZone)")).toBeUndefined();
+  });
+});
+
+describe("usageLimitBackoffMs", () => {
+  it("returns a backoff for Claude's weekly-limit notice, using the parsed reset time", () => {
+    const now = new Date("2026-08-03T05:00:00Z");
+    const err = new Error("claude exited with code 1: You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)");
+    expect(usageLimitBackoffMs(err, now)).toBe(4 * 60 * 60 * 1000);
+  });
+
+  it("falls back to a default backoff when no reset time is present", () => {
+    const err = new Error("You've hit your usage limit for this session.");
+    const ms = usageLimitBackoffMs(err);
+    expect(ms).toBeGreaterThan(0);
+  });
+
+  it("returns undefined for unrelated errors so they keep propagating as real failures", () => {
+    expect(usageLimitBackoffMs(new Error("spawn claude ENOENT"))).toBeUndefined();
+    expect(usageLimitBackoffMs(new Error("claude exited with code 1: Not logged in"))).toBeUndefined();
   });
 });
 

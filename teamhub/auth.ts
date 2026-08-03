@@ -72,6 +72,23 @@ export function getOrCreateToken(): string {
   return token;
 }
 
+// Non-creating variant for other processes (e.g. the headless agent
+// runner) that may be talking to a TeamHub server on a different machine.
+// getOrCreateToken() would happily fabricate a brand-new local token if
+// none exists yet — fine for the server itself, but wrong here: on a
+// remote developer/tester PC that "new" token just silently doesn't match
+// the server's, turning a clear "you forgot to set TEAMHUB_TOKEN" error
+// into a confusing 401 further downstream. This only ever returns a token
+// that's known to already exist — the env var, or a state file previously
+// written by getOrCreateToken() (true when the agent runs on the same
+// machine as the server) — and undefined otherwise.
+export function readLocalToken(): string | undefined {
+  if (process.env.TEAMHUB_TOKEN) return process.env.TEAMHUB_TOKEN;
+  const path = tokenPath();
+  if (existsSync(path)) return readFileSync(path, "utf-8").trim();
+  return undefined;
+}
+
 function timingSafeStringEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);

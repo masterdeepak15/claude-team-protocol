@@ -127,8 +127,10 @@ See **`docs/migration.md`**.
   run it on a small always-on box instead of the Lead's own PC if that's a
   concern.
 - Everything requires the shared token `teamhub token` prints (dashboard
-  login, `.mcp.json`'s Authorization header, `TEAMHUB_TOKEN` for `agent`) —
-  one shared secret for the whole team, not per-person accounts, matching
+  login, `.mcp.json`'s Authorization header, `TEAMHUB_TOKEN` for `agent`
+  when it runs on a different machine than the server — same-machine
+  agents pick it up automatically from `~/.teamhub/teamhub.token`) — one
+  shared secret for the whole team, not per-person accounts, matching
   TeamHub's "one office LAN, not a multi-tenant service" scope. See
   `docs/architecture.md`'s "Auth" section for how it's wired.
 

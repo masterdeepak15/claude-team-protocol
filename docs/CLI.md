@@ -140,10 +140,24 @@ teamhub agent --role <master|developer|tester|analyst> --project <id> --handle <
 Runs a **headless, unattended** loop for one of the four roles — no repo
 checkout needed, works directly from the globally-installed CLI.
 
-**Requires `TEAMHUB_TOKEN`** — the shared token `teamhub token` prints
-(same token the dashboard login and `.mcp.json` use). Without it, `agent`
-fails immediately with a clear error rather than starting; there's no
-"unauthenticated agent mode."
+**Auth:** every call this makes to TeamHub is authenticated with the same
+shared token `teamhub token` prints (same token the dashboard login and
+`.mcp.json` use). **On the same machine as the server you don't need to
+set anything** — `agent` automatically reads the token TeamHub already
+wrote to `~/.teamhub/teamhub.token`. Set `TEAMHUB_TOKEN` explicitly only
+when the agent runs on a *different* machine than the server (a
+developer/tester PC, say); if there's no env var and no local token file
+to fall back to, `agent` fails immediately with a clear error rather than
+starting — there's no "unauthenticated agent mode."
+
+**Coming online never costs Claude tokens.** Registration happens as a
+direct call to TeamHub before `claude` is ever spawned, so an agent shows
+up online in the dashboard even if Claude Code's usage/weekly limit is
+already exhausted. If a cycle later hits that limit mid-run, `agent` backs
+off and retries automatically (parsing the reset time TeamHub's own
+"resets HH:MMam/pm (zone)" notice reports when present, falling back to a
+15-minute retry otherwise) instead of crashing — it stays registered and
+online the whole time.
 
 **Important:** run this from the actual project directory you want worked
 on. `process.cwd()` at the moment you run it is where the session-tracking
@@ -166,31 +180,35 @@ Read-only + WebSearch/WebFetch) work.
 the interrupt watchdog, all of it — at the TeamHub host. Set this
 explicitly whenever TeamHub runs on a different machine than the agent.
 
-Examples:
+Examples — same machine as the server (no token setup needed at all):
 
 ```bash
 cd /path/to/your/project
 
-TEAMHUB_TOKEN=<token from `teamhub token`> \
-  teamhub agent --role master --project bts-project --handle master-1
+teamhub agent --role master --project bts-project --handle master-1
 
-TEAMHUB_TOKEN=<token> \
-  teamhub agent --role developer --project bts-project --handle dev-A --master-handle master-1
+teamhub agent --role developer --project bts-project --handle dev-A --master-handle master-1
 
-TEAMHUB_URL=http://192.168.1.20:8787/mcp TEAMHUB_TOKEN=<token> \
-  teamhub agent --role tester --project bts-project --handle tester-1 \
+teamhub agent --role tester --project bts-project --handle tester-1 \
   --master-handle master-1 --mode auto --watchdog-interval 5
 
-TEAMHUB_TOKEN=<token> \
-  teamhub agent --role analyst --project bts-project --handle analyst-1 --master-handle master-1
+teamhub agent --role analyst --project bts-project --handle analyst-1 --master-handle master-1
 ```
 
-If you're running this on the same machine as the server, exporting
-`TEAMHUB_TOKEN` once per shell session (rather than repeating it on every
+Examples — a different machine than the server (developer/tester PC),
+where `TEAMHUB_TOKEN` is required:
+
+```bash
+TEAMHUB_URL=http://192.168.1.20:8787/mcp TEAMHUB_TOKEN=<token from `teamhub token`> \
+  teamhub agent --role tester --project bts-project --handle tester-1 \
+  --master-handle master-1 --mode auto --watchdog-interval 5
+```
+
+Exporting it once per shell session (rather than repeating it on every
 command) is usually easier:
 
 ```bash
-export TEAMHUB_TOKEN=$(teamhub token | head -1)
+export TEAMHUB_TOKEN=<token>
 teamhub agent --role master --project bts-project --handle master-1
 ```
 

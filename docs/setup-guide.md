@@ -343,6 +343,13 @@ This requires `claude` on your `PATH` (same requirement as any Claude Code
 usage) and replaces the old bash + `jq` scripts — no extra dependencies are
 needed on Windows.
 
+**No token setup needed here** — since these commands run on the same
+machine as the server, `agent` reads the shared auth token straight from
+`~/.teamhub/teamhub.token` (the same file `teamhub token` prints from).
+You only need to set `TEAMHUB_TOKEN` by hand for a cross-machine run — see
+the auto-mode example just below, or Step 3b for a dedicated client-only
+machine.
+
 ### Auto mode: auto-approved edits + the Lead can interrupt it
 
 Add `--mode auto` on a headless Developer or Tester to auto-approve file
