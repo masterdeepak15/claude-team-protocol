@@ -1,10 +1,12 @@
 # Claude Team Protocol — TeamHub
 
 A multi-agent team workflow for Claude Code: one Team Lead session plans and
-assigns work, Developer sessions write the code, Tester sessions verify it
-and report bugs, and everyone talks through **TeamHub** — a single,
-self-hosted MCP server that replaces Jira/relay/planner-style juggling with
-one free, SQLite-backed service.
+assigns work (asking clarifying questions before it does), Developer
+sessions write the code, Tester sessions verify it and report bugs, Analyst
+sessions clarify requirements and research without writing code, and
+everyone talks through **TeamHub** — a single, self-hosted, token-authenticated
+MCP server that replaces Jira/relay/planner-style juggling with one free,
+SQLite-backed service.
 
 TeamHub is project-aware: one instance can host multiple projects, each with
 its own sprints, tasks, and team roster.
@@ -28,6 +30,7 @@ PC1: TeamHub host          PC2: Team Lead              PC3+: Developers
 npm install -g @masterdeepak15/teamhub-cli
 teamhub install   # interactive: skills / .mcp.json / Claude Desktop / autostart
 teamhub start
+teamhub token     # print the shared auth token — everything below needs it
 ```
 
 **On every other machine** (most Developer/Tester PCs — they only connect
@@ -36,7 +39,8 @@ server code and no native dependencies:
 
 ```bash
 npm install -g @masterdeepak15/teamhub-client
-teamhub-client connect <teamhub-host-ip>:8787
+# <token> is whatever `teamhub token` printed on the host machine above
+teamhub-client connect <teamhub-host-ip>:8787 <token>
 teamhub-client install --skills --mcp
 ```
 
@@ -122,10 +126,11 @@ See **`docs/migration.md`**.
   GitHub work, but can't message each other or see tasks until it's back —
   run it on a small always-on box instead of the Lead's own PC if that's a
   concern.
-- TeamHub is intentionally simple (no auth) — same trust model as before:
-  one office LAN, not a multi-tenant service. The monitoring dashboard
-  (`http://<host>:8787/`) has no login for the same reason — see
-  `docs/architecture.md`.
+- Everything requires the shared token `teamhub token` prints (dashboard
+  login, `.mcp.json`'s Authorization header, `TEAMHUB_TOKEN` for `agent`) —
+  one shared secret for the whole team, not per-person accounts, matching
+  TeamHub's "one office LAN, not a multi-tenant service" scope. See
+  `docs/architecture.md`'s "Auth" section for how it's wired.
 
 ## License
 

@@ -127,14 +127,15 @@ never something a session decides for itself.
 (`agents/runner.ts --role developer --mode auto`):
 
 - Its `claude -p` cycles still run with `--permission-mode acceptEdits` —
-  **deliberately never `bypassPermissions`**. TeamHub has no authentication
-  (see Non-goals in the design spec), so anyone who can reach its HTTP port
-  could otherwise call `interrupt_developer` (or `notify_assignment` /
-  `send_message`) with a crafted `reason`/`summary` string, which gets fed
-  verbatim as the next instruction. With `bypassPermissions`, that would be
-  a real prompt-injection-to-RCE path — Bash execution with zero
-  confirmation. `acceptEdits` keeps file edits auto-approved (the actual
-  value of "auto" mode) while leaving Bash gated.
+  **deliberately never `bypassPermissions`**. TeamHub requires the shared
+  auth token (see "Auth" below), but that token is one shared secret for
+  the whole team, not scoped per person, so it doesn't shrink this
+  specific risk: anyone who has it could call `interrupt_developer` (or
+  `notify_assignment` / `send_message`) with a crafted `reason`/`summary`
+  string, which gets fed verbatim as the next instruction. With
+  `bypassPermissions`, that would be a real prompt-injection-to-RCE path —
+  Bash execution with zero confirmation. `acceptEdits` keeps file edits
+  auto-approved (the actual value of "auto" mode) while leaving Bash gated.
 - The runner keeps a second, lightweight loop running concurrently with
   each cycle: `pollForInterrupt` connects directly to TeamHub over MCP
   (`@modelcontextprotocol/sdk`'s `Client` + `StreamableHTTPClientTransport`,
@@ -364,9 +365,12 @@ layout with six views:
   (used by both the REST route and the `send_message` MCP tool), and the UI
   no longer offers a "from" choice at all — you're always Owner, talking to
   a real member.
-- **No auth, same as everything else here** — the Owner identity is a
-  dashboard convenience, not a real auth system. Any dynamic value from the
-  database (message text, task titles, comments — fields an unauthenticated
-  MCP caller could set) is escaped
-  before being inserted into the page, since XSS is otherwise possible in
-  this no-auth model.
+- **The Owner identity isn't a real auth system** — it's a fixed sender
+  identity for dashboard-composed messages (see below), separate from the
+  actual login (see "Auth" below, which the whole dashboard now requires).
+  Any dynamic value from the database (message text, task titles, comments
+  — fields any caller holding the shared token could set, including a
+  compromised or malicious team member's machine, not just outsiders) is
+  escaped before being inserted into the page, since that's still true
+  regardless of login — XSS risk comes from what ends up in the DOM, not
+  from whether the request that created the data was authenticated.

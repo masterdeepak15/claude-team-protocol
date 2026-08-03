@@ -88,6 +88,14 @@ http://0.0.0.0:8787/mcp`. Find this PC's LAN IP with `ipconfig` (Windows) or
 `ifconfig`/`ip addr` (Mac/Linux). Open inbound TCP for port 8787 on this
 PC's firewall for your office network profile.
 
+**The same startup output also prints your shared auth token** — generated
+automatically the first time TeamHub runs, saved to
+`~/.teamhub/teamhub.token` on this machine. You'll need it for the next
+two things: logging into the dashboard, and letting every other machine's
+`.mcp.json` talk to `/mcp`. If you miss it scrolling by, run `teamhub
+token` anytime (from this machine) to print it again — see Step 2b and
+Step 3 below for where it's used.
+
 ### Verifying it's actually reachable from another PC
 
 TeamHub also exposes a plain `GET /health` endpoint, separate from the MCP
@@ -107,16 +115,32 @@ If this times out or refuses to connect from another PC, it's a networking
 problem (firewall, wrong IP, wrong network profile) — see the troubleshooting
 notes at the bottom of this guide. If it works, TeamHub itself is fine.
 
-### Step 2b — Open the monitoring dashboard
+### Step 2b — Log into the monitoring dashboard
 
-Once TeamHub is running, open `http://<teamhub-host-ip>:8787/` (same host
-and port as everything else) in any browser — no separate setup, no login.
-You get:
+Open `http://<teamhub-host-ip>:8787/` (same host and port as everything
+else) in any browser. You'll land on a login screen, not the dashboard
+directly — every request to TeamHub requires the shared token (see the
+box above), and this is the same token for both.
 
-- **Dashboard** — task-status counts, active sprint, full team roster.
+1. Paste the token from Step 2's startup output (or run `teamhub token`
+   on the server machine to print it again) into the **Token** field.
+2. Click **Log in**.
+
+That's it — no separate username, no account to create. It's a single
+shared password, not per-person accounts, matching the single shared
+**Owner** identity every dashboard action is sent as (more on that below).
+The browser remembers you for 30 days via a cookie; **Log out** (top
+right) ends that session — and every other browser's session too, since
+there's only one shared identity to log out of, not per-user ones.
+
+Once logged in, you get:
+
+- **Dashboard** — task-status counts, active sprint, full team roster,
+  with a live online/offline dot per member.
 - **Board** — a Jira-like Kanban across backlog/todo/in_progress/in_review/done/blocked, updating live as tasks move.
 - **Sprints** — every sprint with its tasks.
-- **Team** — every registered member, their role/mode, and a "Message" button.
+- **Team** — every registered member, their role/mode, live presence, and
+  a "Message" button.
 - **Messages** — pick any member, see your full conversation history with
   them (not just what's unread), and reply as **Owner** — the reserved
   dashboard-operator identity (not a real agent handle, can't be registered
@@ -125,10 +149,17 @@ You get:
   one combined, color-coded, real-time feed, instead of picking a single
   1:1 thread. Reply as Owner here too, addressed to whichever member you pick.
 
-This is a convenience for humans, not a new access-control layer — same
-no-auth trust model as the rest of TeamHub. Anyone who can reach the port
-can open the dashboard and send messages as Owner, same as they already
-could via `send_message`.
+If your session ever expires (or someone logs everyone out from another
+browser), any action anywhere in the dashboard bounces you straight back
+to the login screen — no need to manually notice you're logged out.
+
+**Lost/need a new token?** There's no separate "forgot token" flow, since
+there's no email or account behind it to recover — the token itself *is*
+the credential. On the server machine: `teamhub token` reprints the
+existing one. To force a completely new one (e.g. you suspect it leaked),
+stop TeamHub, delete `~/.teamhub/teamhub.token`, and start it again — a
+fresh token generates automatically, and every machine's `.mcp.json` plus
+every browser's login will need updating with it.
 
 ## Step 3 — Point every machine's `.mcp.json` at the TeamHub host
 
@@ -319,9 +350,12 @@ edits (`--permission-mode acceptEdits` — same as manual mode, no change
 there) **and** let the Lead remotely stop and redirect its in-flight work
 via `interrupt_developer`, instead of waiting for the next cycle. Bash
 commands still require confirmation in both modes — auto mode is
-deliberately never `bypassPermissions`, since TeamHub has no authentication
-and a crafted `interrupt_developer` reason would otherwise be a real
-prompt-injection path straight to unconfirmed shell execution:
+deliberately never `bypassPermissions`. TeamHub does require the shared
+auth token now, but that token is deliberately one shared secret for the
+whole team (matching the single Owner identity), not scoped per person —
+it keeps outsiders off the server, but doesn't shrink the risk of a
+crafted `interrupt_developer` reason from anyone who already has it being
+a prompt-injection path straight to unconfirmed shell execution:
 
 ```bash
 # Run from the project directory — TEAMHUB_URL points the watchdog at the

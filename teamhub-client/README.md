@@ -28,17 +28,24 @@ npm install -g @masterdeepak15/teamhub-client
 ## Usage
 
 ```bash
-# One-time: point at the TeamHub server (checks reachability, saves either way)
-teamhub-client connect 172.16.10.32:8787
+# One-time: point at the TeamHub server AND save the shared token — get the
+# token by running `teamhub token` on the machine hosting TeamHub.
+teamhub-client connect 172.16.10.32:8787 <token>
 
 # Check connectivity anytime
 teamhub-client status
 
-# From the project directory you'll be working in:
+# From the project directory you'll be working in — embeds the saved
+# token into .mcp.json's Authorization header automatically:
 teamhub-client install --skills --mcp
 
-# Headless session — run FROM the project directory:
+# Headless session — run FROM the project directory. Picks up the saved
+# token automatically too (no need to export TEAMHUB_TOKEN by hand unless
+# you want to override it for one run):
 teamhub-client agent --role developer --project bts-project --handle dev-A --master-handle master-1
+
+# Also works for tester and analyst roles:
+teamhub-client agent --role analyst --project bts-project --handle analyst-1 --master-handle master-1
 ```
 
 See `docs/CLI.md` in the

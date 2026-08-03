@@ -34,9 +34,9 @@ Sets up TeamHub in the **current directory** / on this machine.
 
 | Flag | Effect |
 |---|---|
-| `--skills` | Copies `team-lead`, `team-developer`, `tester`, `project-planner` into `./.claude/skills/` |
-| `--mcp` | Adds/updates a `teamhub` entry in `./.mcp.json` |
-| `--desktop` | Adds/updates a `teamhub` entry in Claude Desktop's config (via the `mcp-remote` bridge, since Desktop only supports local `command`-based MCP servers) |
+| `--skills` | Copies `team-lead`, `team-developer`, `tester`, `analyst`, `project-planner` into `./.claude/skills/` |
+| `--mcp` | Adds/updates a `teamhub` entry in `./.mcp.json`, including the `Authorization: Bearer <token>` header (see `token` below) |
+| `--desktop` | Adds/updates a `teamhub` entry in Claude Desktop's config (via the `mcp-remote` bridge, since Desktop only supports local `command`-based MCP servers), including the same auth header via `--header` |
 | `--autostart` | Registers TeamHub to start at login/boot — Windows Task Scheduler, macOS LaunchAgent, or Linux systemd `--user` service, whichever matches this OS |
 | `--port <n>` | Port to use for the `.mcp.json`/Desktop entries and for `--autostart` (default `8787`) |
 | `--db <path>` | Custom SQLite file path to bake into `--autostart`'s service definition |
@@ -54,6 +54,27 @@ teamhub install --skills --mcp
 # Non-interactive: everything, custom port
 teamhub install --skills --mcp --desktop --autostart --port 9000
 ```
+
+---
+
+## `token`
+
+```bash
+teamhub token
+```
+
+Prints the shared auth token every request to TeamHub now requires —
+generating one on first use if it doesn't exist yet
+(`~/.teamhub/teamhub.token`, override with the `TEAMHUB_TOKEN` env var).
+Run this on the machine hosting TeamHub whenever you need the token again:
+to log into the dashboard, to hand to a new developer/tester/analyst PC
+for their `.mcp.json`, or to set `TEAMHUB_TOKEN` for `agent`.
+
+There's no separate rotate/revoke command — the token *is* the whole
+credential, so "rotating" it is: stop TeamHub, delete
+`~/.teamhub/teamhub.token`, start it again. A fresh token generates
+automatically, and every machine's `.mcp.json` plus every browser's login
+will need updating with the new one.
 
 ---
 
@@ -113,43 +134,64 @@ Prints the TeamHub server's log output.
 ## `agent`
 
 ```bash
-teamhub agent --role <master|developer|tester> --project <id> --handle <name> [--master-handle <name>] [--mode auto|manual] [--cycle <seconds>] [--watchdog-interval <seconds>]
+teamhub agent --role <master|developer|tester|analyst> --project <id> --handle <name> [--master-handle <name>] [--mode auto|manual] [--cycle <seconds>] [--watchdog-interval <seconds>]
 ```
 
-Runs a **headless, unattended** loop for one of the three roles — no repo
+Runs a **headless, unattended** loop for one of the four roles — no repo
 checkout needed, works directly from the globally-installed CLI.
+
+**Requires `TEAMHUB_TOKEN`** — the shared token `teamhub token` prints
+(same token the dashboard login and `.mcp.json` use). Without it, `agent`
+fails immediately with a clear error rather than starting; there's no
+"unauthenticated agent mode."
 
 **Important:** run this from the actual project directory you want worked
 on. `process.cwd()` at the moment you run it is where the session-tracking
-file lives, and — for `developer`/`tester` — where the spawned `claude -p`
-process does its actual Read/Edit/Bash work.
+file lives, and — for `developer`/`tester`/`analyst` — where the spawned
+`claude -p` process does its actual Read/Edit/Bash (or, for `analyst`,
+Read-only + WebSearch/WebFetch) work.
 
 | Flag | Meaning |
 |---|---|
-| `--role` | `master` (Lead), `developer`, or `tester` |
+| `--role` | `master` (Lead), `developer`, `tester`, or `analyst` |
 | `--project` | The TeamHub project id this handle registers under |
 | `--handle` | This session's unique handle |
-| `--master-handle` | Required for `developer`/`tester` — who they report to |
-| `--mode` | `manual` (default) or `auto`. `auto` only changes real behavior for `developer`/`tester`: file edits auto-approve, and the Lead can genuinely interrupt and redirect in-flight work via `interrupt_developer`. Bash still requires confirmation either way — see `docs/architecture.md` for why `bypassPermissions` is deliberately never used. |
-| `--cycle` | Seconds between check-inbox cycles (default `60` for master, `30` for developer/tester) |
+| `--master-handle` | Required for `developer`/`tester`/`analyst` — who they report to |
+| `--mode` | `manual` (default) or `auto`. `auto` only changes real behavior for `developer`/`tester`/`analyst`: file edits auto-approve (developer/tester only — analyst has no Edit tool to begin with), and the Lead can genuinely interrupt and redirect in-flight work via `interrupt_developer`. Bash still requires confirmation either way — see `docs/architecture.md` for why `bypassPermissions` is deliberately never used. **`auto` does not mean "runs unattended" — both modes always loop unattended once started; it only controls whether the Lead can interrupt mid-cycle.** |
+| `--cycle` | Seconds to long-poll TeamHub for before reconnecting (default `60` for master, `30` for others) — **not** a fixed sleep between cycles. The request returns immediately the moment there's actually something to do, or after this many seconds if nothing happens; either way, no `claude` process spawns and no tokens are spent until there's real work. |
 | `--watchdog-interval` | Only relevant with `--mode auto` — how often (seconds, default `5`) the interrupt watchdog polls while a cycle is running |
 
-`TEAMHUB_URL` env var (default `http://localhost:<TEAMHUB_PORT or 8787>/mcp`)
-points the `--mode auto` watchdog at the TeamHub host — set this explicitly
-whenever TeamHub runs on a different machine than the agent.
+`TEAMHUB_URL` env var (default `http://localhost:<TEAMHUB_PORT or
+8787>/mcp`) points every HTTP call this runner makes — the idle long-poll,
+the interrupt watchdog, all of it — at the TeamHub host. Set this
+explicitly whenever TeamHub runs on a different machine than the agent.
 
 Examples:
 
 ```bash
 cd /path/to/your/project
 
-teamhub agent --role master --project bts-project --handle master-1
+TEAMHUB_TOKEN=<token from `teamhub token`> \
+  teamhub agent --role master --project bts-project --handle master-1
 
-teamhub agent --role developer --project bts-project --handle dev-A --master-handle master-1
+TEAMHUB_TOKEN=<token> \
+  teamhub agent --role developer --project bts-project --handle dev-A --master-handle master-1
 
-TEAMHUB_URL=http://192.168.1.20:8787/mcp \
+TEAMHUB_URL=http://192.168.1.20:8787/mcp TEAMHUB_TOKEN=<token> \
   teamhub agent --role tester --project bts-project --handle tester-1 \
   --master-handle master-1 --mode auto --watchdog-interval 5
+
+TEAMHUB_TOKEN=<token> \
+  teamhub agent --role analyst --project bts-project --handle analyst-1 --master-handle master-1
+```
+
+If you're running this on the same machine as the server, exporting
+`TEAMHUB_TOKEN` once per shell session (rather than repeating it on every
+command) is usually easier:
+
+```bash
+export TEAMHUB_TOKEN=$(teamhub token | head -1)
+teamhub agent --role master --project bts-project --handle master-1
 ```
 
 ---
@@ -240,6 +282,8 @@ Prints the command reference (a shorter version of this file).
 | `~/.teamhub/teamhub.pid` | pid of the currently running background server |
 | `~/.teamhub/teamhub.log` | its stdout/stderr |
 | `~/.teamhub/teamhub.meta.json` | last-used port/db, so `upgrade` can restart identically |
+| `~/.teamhub/teamhub.token` | the shared auth token (see `token` above) — generated on first use |
+| `~/.teamhub/session-revoked-before` | timestamp used to make dashboard logout actually invalidate every previously-issued session, not just the browser that clicked it |
 | `./.claude/skills/*` | skills copied in by `install --skills` (relative to wherever you ran `install`) |
-| `./.mcp.json` | edited in place by `install --mcp` (merges in a `teamhub` entry, preserves everything else already there) |
-| Claude Desktop's `claude_desktop_config.json` | edited in place by `install --desktop` |
+| `./.mcp.json` | edited in place by `install --mcp` (merges in a `teamhub` entry with the auth header, preserves everything else already there) |
+| Claude Desktop's `claude_desktop_config.json` | edited in place by `install --desktop`, including the auth header via `mcp-remote --header` |
