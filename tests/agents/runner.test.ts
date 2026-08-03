@@ -10,6 +10,7 @@ import {
   logStreamEvent,
   usageLimitBackoffMs,
   parseResetDelayMs,
+  exitErrorMessage,
 } from "../../agents/runner.js";
 
 describe("parseArgs", () => {
@@ -353,24 +354,53 @@ describe("usageLimitBackoffMs", () => {
   });
 });
 
+describe("exitErrorMessage", () => {
+  it("leads with the assistant's last text block, which is where Claude's own limit notice appears", () => {
+    const message = exitErrorMessage(1, "You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)", "");
+    expect(message).toBe("claude exited with code 1: You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)");
+  });
+
+  it("includes stderr too when both are present", () => {
+    const message = exitErrorMessage(1, "some assistant text", "some stderr");
+    expect(message).toBe("claude exited with code 1: some assistant text — some stderr");
+  });
+
+  it("falls back to a placeholder when there's no output captured at all", () => {
+    expect(exitErrorMessage(1, "", "")).toBe("claude exited with code 1: (no output captured)");
+  });
+
+  it("regression: a weekly-limit exit is detected end-to-end by usageLimitBackoffMs", () => {
+    // This is exactly the real-world failure mode: Claude Code's limit
+    // notice arrives as a stdout assistant text block, not stderr — if
+    // exitErrorMessage ever stops including lastAssistantText, this stops
+    // matching and the runner goes back to crashing instead of backing off.
+    const err = new Error(
+      exitErrorMessage(1, "You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)", "")
+    );
+    expect(usageLimitBackoffMs(err, new Date("2026-08-03T05:00:00Z"))).toBe(4 * 60 * 60 * 1000);
+  });
+});
+
 describe("logStreamEvent", () => {
-  it("prints assistant text blocks", () => {
+  it("prints assistant text blocks and returns the text", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    logStreamEvent("master-1", {
+    const result = logStreamEvent("master-1", {
       type: "assistant",
       message: { content: [{ type: "text", text: "Created task BTS-3." }] },
     });
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("Created task BTS-3."));
+    expect(result).toBe("Created task BTS-3.");
     spy.mockRestore();
   });
 
-  it("prints tool_use blocks with the tool name", () => {
+  it("prints tool_use blocks with the tool name and returns undefined (no text block)", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    logStreamEvent("dev-A", {
+    const result = logStreamEvent("dev-A", {
       type: "assistant",
       message: { content: [{ type: "tool_use", name: "mcp__teamhub__check_inbox", input: { handle: "dev-A" } }] },
     });
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("calling mcp__teamhub__check_inbox"));
+    expect(result).toBeUndefined();
     spy.mockRestore();
   });
 

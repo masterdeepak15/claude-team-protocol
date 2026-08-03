@@ -199,6 +199,14 @@ interface SpawnHandle {
 // .cmd-invocation problem without that trade-off — it does its own
 // careful argument escaping so each array element still reaches the
 // child process as a literal value, not something cmd.exe re-parses.
+// Extracted as a pure function purely so this exact assembly — assistant
+// text first, stderr second — is directly testable without spawning a
+// real `claude` process end-to-end.
+export function exitErrorMessage(code: number | null, lastAssistantText: string, stderr: string): string {
+  const detail = [lastAssistantText, stderr.trim()].filter(Boolean).join(" — ");
+  return `claude exited with code ${code}: ${detail || "(no output captured)"}`;
+}
+
 function spawnClaude(
   prompt: string,
   handle: string,
@@ -234,6 +242,13 @@ function spawnClaude(
   let lineBuffer = "";
   let stderr = "";
   let finalResult: unknown;
+  // Claude Code's own "you've hit your weekly limit · resets ..." notice
+  // arrives as a normal assistant text block over stdout, not stderr —
+  // spawnClaude's rejection below used to only include stderr, so that
+  // notice was printed live (via logStreamEvent) but then silently lost
+  // the moment the process exited non-zero, leaving usageLimitBackoffMs
+  // nothing to match against. Keeping the last one here fixes that.
+  let lastAssistantText = "";
 
   child.stdout?.on("data", (chunk) => {
     lineBuffer += chunk;
@@ -248,7 +263,8 @@ function spawnClaude(
       } catch {
         continue; // a malformed/partial line should never crash the runner
       }
-      logStreamEvent(handle, event);
+      const text = logStreamEvent(handle, event);
+      if (text) lastAssistantText = text;
       if (event?.type === "result") finalResult = event;
     }
   });
@@ -260,7 +276,7 @@ function spawnClaude(
     child.on("error", reject);
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`claude exited with code ${code}: ${stderr}`));
+        reject(new Error(exitErrorMessage(code, lastAssistantText, stderr)));
       } else if (finalResult === undefined) {
         reject(new Error(`claude exited 0 but no "result" event was seen in its stream-json output: ${stderr}`));
       } else {
@@ -281,16 +297,19 @@ function spawnClaude(
 // everything through optional chaining and silently drops anything it
 // doesn't recognize rather than risk crashing a real cycle over a logging
 // line.
-export function logStreamEvent(handle: string, event: any): void {
+export function logStreamEvent(handle: string, event: any): string | undefined {
   try {
     if (event?.type === "assistant" && Array.isArray(event.message?.content)) {
+      let lastText: string | undefined;
       for (const block of event.message.content) {
         if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
           console.log(`[${handle}] ${truncateForLog(block.text.trim())}`);
+          lastText = block.text.trim();
         } else if (block?.type === "tool_use" && typeof block.name === "string") {
           console.log(`[${handle}] → calling ${block.name}(${truncateForLog(JSON.stringify(block.input ?? {}), 150)})`);
         }
       }
+      return lastText;
     } else if (event?.type === "system" && event.subtype === "init") {
       console.log(`[${handle}] session started${event.model ? ` (model: ${event.model})` : ""}.`);
     }
@@ -302,6 +321,7 @@ export function logStreamEvent(handle: string, event: any): void {
   } catch {
     // A logging hiccup must never break the actual cycle.
   }
+  return undefined;
 }
 
 function truncateForLog(text: string, max = 300): string {
