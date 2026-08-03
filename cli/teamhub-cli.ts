@@ -578,7 +578,25 @@ async function runInstall(flags: Flags): Promise<void> {
     console.log(`Added teamhub to Claude Desktop's config: ${updateDesktopConfigFile(teamhubUrl, token)}`);
   }
   if (wantAutostart) {
-    installAutostart(port, dbPath);
+    try {
+      installAutostart(port, dbPath);
+    } catch (err) {
+      // Registering autostart (Task Scheduler / launchd / systemd) needs
+      // elevated rights or can be blocked outright by machine/group
+      // policy — common on locked-down corporate Windows machines. That's
+      // a real limitation worth surfacing, but it shouldn't take the rest
+      // of a successful install down with it (skills/mcp/desktop above
+      // already succeeded, and the token/"run teamhub start" summary
+      // below is exactly what's needed to keep going manually instead).
+      console.warn(
+        `Warning: could not register TeamHub to start automatically (this usually needs an ` +
+          `elevated/admin terminal, or is blocked by machine policy). Everything else installed ` +
+          `fine — just run "teamhub start" yourself each time, or re-run "teamhub install" from an ` +
+          `elevated terminal later if you want autostart. Underlying error: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+      );
+    }
   }
   if (wantMcp || wantDesktop) {
     console.log("");
