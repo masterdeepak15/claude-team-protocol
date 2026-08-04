@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TeamHub — one hub, many Claude Code accounts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B0E11;
+    --bg-raised:#12161B;
+    --line:#232A32;
+    --line-soft:#1A2027;
+    --ink:#E8E6E1;
+    --ink-dim:#8E97A1;
+    --amber:#F2A93B;
+    --amber-dim:#8A6423;
+    --teal:#3FB8AF;
+    --teal-dim:#1F4C48;
+    --radius:10px;
+    --mono:'IBM Plex Mono', ui-monospace, monospace;
+    --sans:'Inter', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size:64px 64px;
+    opacity:0.35;
+    pointer-events:none;
+    z-index:0;
+  }
+  .wrap{position:relative; z-index:1; max-width:980px; margin:0 auto; padding:0 24px;}
+  a{color:var(--amber);}
+
+  header.hero{
+    padding:96px 0 72px;
+    border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:0.78rem;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--teal);
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:22px;
+  }
+  .eyebrow .dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--teal);
+    box-shadow:0 0 0 0 rgba(63,184,175,0.5);
+    animation:pulse 2.2s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(63,184,175,0.45);}
+    70%{box-shadow:0 0 0 10px rgba(63,184,175,0);}
+    100%{box-shadow:0 0 0 0 rgba(63,184,175,0);}
+  }
+  h1{
+    font-family:var(--sans);
+    font-weight:800;
+    font-size:clamp(2.1rem, 5vw, 3.4rem);
+    line-height:1.06;
+    letter-spacing:-0.02em;
+    margin:0 0 22px;
+  }
+  h1 .accent{color:var(--amber);}
+  .sub{
+    font-size:1.12rem;
+    color:var(--ink-dim);
+    max-width:640px;
+    margin:0 0 36px;
+  }
+  .hero-meta{
+    display:flex; gap:28px; flex-wrap:wrap;
+    font-family:var(--mono);
+    font-size:0.82rem;
+    color:var(--ink-dim);
+  }
+  .hero-meta b{color:var(--ink); font-weight:600;}
+
+  section{padding:72px 0; border-bottom:1px solid var(--line);}
+  section:last-of-type{border-bottom:none;}
+  .kicker{
+    font-family:var(--mono);
+    font-size:0.75rem;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--amber);
+    margin:0 0 12px;
+  }
+  h2{
+    font-size:clamp(1.5rem, 3vw, 2rem);
+    letter-spacing:-0.01em;
+    margin:0 0 14px;
+  }
+  p.lead{color:var(--ink-dim); max-width:680px; margin:0 0 40px; font-size:1.02rem;}
+
+  /* ---- diagram frame ---- */
+  .diagram{
+    background:var(--bg-raised);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:28px;
+    overflow-x:auto;
+  }
+  .diagram svg{display:block; width:100%; height:auto;}
+  .diagram-caption{
+    font-family:var(--mono);
+    font-size:0.78rem;
+    color:var(--ink-dim);
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px dashed var(--line);
+  }
+
+  /* ---- comparison cards ---- */
+  .compare{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    margin-top:36px;
+  }
+  @media (max-width:700px){ .compare{grid-template-columns:1fr;} }
+  .card{
+    background:var(--bg-raised);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:24px;
+  }
+  .card.old{ border-color:#3A2A22; }
+  .card.new{ border-color:var(--teal-dim); }
+  .card-label{
+    font-family:var(--mono);
+    font-size:0.72rem;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    margin-bottom:14px;
+    display:inline-block;
+    padding:3px 8px;
+    border-radius:4px;
+  }
+  .card.old .card-label{ color:#E08A4B; background:rgba(224,138,75,0.1); }
+  .card.new .card-label{ color:var(--teal); background:rgba(63,184,175,0.1); }
+  .card h3{margin:0 0 12px; font-size:1.05rem;}
+  .card ul{margin:0; padding-left:18px; color:var(--ink-dim); font-size:0.92rem;}
+  .card li{margin-bottom:8px;}
+  .card li b{color:var(--ink); font-weight:600;}
+
+  /* ---- feature grid ---- */
+  .feature-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+    margin-top:36px;
+  }
+  .feature{
+    background:var(--bg-raised);
+    padding:24px;
+  }
+  .feature .num{
+    font-family:var(--mono);
+    font-size:0.75rem;
+    color:var(--amber-dim);
+    margin-bottom:10px;
+  }
+  .feature h4{margin:0 0 8px; font-size:0.98rem;}
+  .feature p{margin:0; color:var(--ink-dim); font-size:0.88rem;}
+
+  /* ---- lifecycle steps ---- */
+  .steps{margin-top:36px; display:flex; flex-direction:column;}
+  .step{
+    display:grid;
+    grid-template-columns:44px 1fr;
+    gap:18px;
+    padding:18px 0;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .step:last-child{border-bottom:none;}
+  .step-dot{
+    width:44px; height:44px;
+    border-radius:50%;
+    border:1px solid var(--line);
+    background:var(--bg-raised);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:0.85rem; color:var(--teal);
+  }
+  .step h4{margin:0 0 6px; font-size:0.98rem;}
+  .step p{margin:0; color:var(--ink-dim); font-size:0.9rem; max-width:600px;}
+  .step code{
+    font-family:var(--mono); font-size:0.82rem;
+    background:var(--bg); border:1px solid var(--line);
+    padding:1px 6px; border-radius:4px; color:var(--amber);
+  }
+
+  footer{
+    padding:56px 0 96px;
+    font-family:var(--mono);
+    font-size:0.8rem;
+    color:var(--ink-dim);
+  }
+  footer a{color:var(--teal);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow"><span class="dot"></span>agent orchestration / claude code</div>
+    <h1>One hub. Many <span class="accent">Claude Code</span> accounts, spawned as a team.</h1>
+    <p class="sub">
+      TeamHub turns a single planning conversation into a running team: one Lead
+      account plans and hands out tasks, developer and tester accounts each spawn
+      their own <code>claude</code> sessions to pick them up — checking in over a
+      zero-token long-poll instead of burning tokens to ask "anything for me yet?"
+    </p>
+    <div class="hero-meta">
+      <span><b>Roles:</b> Lead · Developer · Tester · Analyst</span>
+      <span><b>Transport:</b> MCP + plain HTTP</span>
+      <span><b>Tracked:</b> cost &amp; tokens, per account, per session</span>
+    </div>
+  </header>
+
+  <section id="architecture">
+    <div class="kicker">01 — the shape of it</div>
+    <h2>One TeamHub, one account per role</h2>
+    <p class="lead">
+      Each teammate is a separate Claude Code account/handle with its own runner
+      process. They don't share a context window or a terminal — they share a
+      project on TeamHub, which is the only thing that has to stay in sync.
+    </p>
+    <div class="diagram">
+      <svg viewBox="0 0 980 520" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#3FB8AF"/>
+          </marker>
+          <marker id="arrowAmber" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#F2A93B"/>
+          </marker>
+        </defs>
+
+        <!-- hub, center -->
+        <rect x="400" y="222" width="180" height="86" rx="10" fill="#12161B" stroke="#F2A93B" stroke-width="1.5"/>
+        <text x="490" y="256" text-anchor="middle" fill="#E8E6E1" font-family="IBM Plex Mono" font-size="14" font-weight="600">TeamHub</text>
+        <text x="490" y="274" text-anchor="middle" fill="#8E97A1" font-family="IBM Plex Mono" font-size="10">one server · one DB</text>
+        <text x="490" y="292" text-anchor="middle" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9">tasks · messages · usage</text>
+
+        <!-- ================= MACHINE 1 (Lead) ================= -->
+        <g>
+          <rect x="30" y="16" width="220" height="120" rx="10" fill="none" stroke="#232A32" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="46" y="34" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9" letter-spacing="0.08em">MACHINE 1 · LAPTOP</text>
+          <!-- terminal window -->
+          <rect x="46" y="44" width="188" height="76" rx="6" fill="#0B0E11" stroke="#3FB8AF" stroke-width="1.2"/>
+          <rect x="46" y="44" width="188" height="16" rx="6" fill="#151B21"/>
+          <circle cx="56" cy="52" r="2.5" fill="#E08A4B"/><circle cx="65" cy="52" r="2.5" fill="#8E97A1"/><circle cx="74" cy="52" r="2.5" fill="#3FB8AF"/>
+          <text x="140" y="56" text-anchor="middle" fill="#8E97A1" font-family="IBM Plex Mono" font-size="8">claude account A</text>
+          <text x="58" y="82" fill="#E8E6E1" font-family="IBM Plex Mono" font-size="12" font-weight="600">Lead</text>
+          <text x="58" y="100" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9">agents/runner.ts</text>
+          <path d="M240,150 L420,225" stroke="#3FB8AF" stroke-width="1.3" fill="none" marker-end="url(#arrow)"/>
+        </g>
+
+        <!-- ================= MACHINE 2 (Developer 1) ================= -->
+        <g>
+          <rect x="30" y="196" width="220" height="120" rx="10" fill="none" stroke="#232A32" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="46" y="214" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9" letter-spacing="0.08em">MACHINE 2 · CLOUD VM</text>
+          <rect x="46" y="224" width="188" height="76" rx="6" fill="#0B0E11" stroke="#3FB8AF" stroke-width="1.2"/>
+          <rect x="46" y="224" width="188" height="16" rx="6" fill="#151B21"/>
+          <circle cx="56" cy="232" r="2.5" fill="#E08A4B"/><circle cx="65" cy="232" r="2.5" fill="#8E97A1"/><circle cx="74" cy="232" r="2.5" fill="#3FB8AF"/>
+          <text x="140" y="236" text-anchor="middle" fill="#8E97A1" font-family="IBM Plex Mono" font-size="8">claude account B</text>
+          <text x="58" y="262" fill="#E8E6E1" font-family="IBM Plex Mono" font-size="12" font-weight="600">Developer 1</text>
+          <text x="58" y="280" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9">agents/runner.ts</text>
+          <path d="M250,256 L398,256" stroke="#3FB8AF" stroke-width="1.3" fill="none" marker-end="url(#arrow)"/>
+        </g>
+
+        <!-- ================= MACHINE 3 (Developer 2) ================= -->
+        <g>
+          <rect x="30" y="376" width="220" height="120" rx="10" fill="none" stroke="#232A32" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="46" y="394" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9" letter-spacing="0.08em">MACHINE 3 · DESKTOP</text>
+          <rect x="46" y="404" width="188" height="76" rx="6" fill="#0B0E11" stroke="#3FB8AF" stroke-width="1.2"/>
+          <rect x="46" y="404" width="188" height="16" rx="6" fill="#151B21"/>
+          <circle cx="56" cy="412" r="2.5" fill="#E08A4B"/><circle cx="65" cy="412" r="2.5" fill="#8E97A1"/><circle cx="74" cy="412" r="2.5" fill="#3FB8AF"/>
+          <text x="140" y="416" text-anchor="middle" fill="#8E97A1" font-family="IBM Plex Mono" font-size="8">claude account C</text>
+          <text x="58" y="442" fill="#E8E6E1" font-family="IBM Plex Mono" font-size="12" font-weight="600">Developer 2</text>
+          <text x="58" y="460" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9">teamhub-client</text>
+          <path d="M240,382 L420,306" stroke="#3FB8AF" stroke-width="1.3" fill="none" marker-end="url(#arrow)"/>
+        </g>
+
+        <!-- ================= MACHINE 4 (Tester) ================= -->
+        <g>
+          <rect x="730" y="16" width="220" height="120" rx="10" fill="none" stroke="#232A32" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="746" y="34" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9" letter-spacing="0.08em">MACHINE 4 · CLOUD VM</text>
+          <rect x="746" y="44" width="188" height="76" rx="6" fill="#0B0E11" stroke="#3FB8AF" stroke-width="1.2"/>
+          <rect x="746" y="44" width="188" height="16" rx="6" fill="#151B21"/>
+          <circle cx="756" cy="52" r="2.5" fill="#E08A4B"/><circle cx="765" cy="52" r="2.5" fill="#8E97A1"/><circle cx="774" cy="52" r="2.5" fill="#3FB8AF"/>
+          <text x="840" y="56" text-anchor="middle" fill="#8E97A1" font-family="IBM Plex Mono" font-size="8">claude account D</text>
+          <text x="758" y="82" fill="#E8E6E1" font-family="IBM Plex Mono" font-size="12" font-weight="600">Tester</text>
+          <text x="758" y="100" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9">teamhub-client</text>
+          <path d="M740,150 L560,225" stroke="#3FB8AF" stroke-width="1.3" fill="none" marker-end="url(#arrow)"/>
+        </g>
+
+        <!-- ================= MACHINE 5 (Owner) ================= -->
+        <g>
+          <rect x="730" y="376" width="220" height="120" rx="10" fill="none" stroke="#232A32" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="746" y="394" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9" letter-spacing="0.08em">MACHINE 5 · PHONE / LAPTOP</text>
+          <rect x="746" y="404" width="188" height="76" rx="6" fill="#0B0E11" stroke="#F2A93B" stroke-width="1.2"/>
+          <rect x="746" y="404" width="188" height="16" rx="6" fill="#151B21"/>
+          <circle cx="756" cy="412" r="2.5" fill="#E08A4B"/><circle cx="765" cy="412" r="2.5" fill="#8E97A1"/><circle cx="774" cy="412" r="2.5" fill="#F2A93B"/>
+          <text x="840" y="416" text-anchor="middle" fill="#8E97A1" font-family="IBM Plex Mono" font-size="8">browser, no account</text>
+          <text x="758" y="442" fill="#E8E6E1" font-family="IBM Plex Mono" font-size="12" font-weight="600">Owner</text>
+          <text x="758" y="460" fill="#8E97A1" font-family="IBM Plex Mono" font-size="9">dashboard, read/relay</text>
+          <path d="M740,382 L560,306" stroke="#F2A93B" stroke-width="1.3" fill="none" marker-end="url(#arrowAmber)" opacity="0.85"/>
+        </g>
+
+        <!-- activity pulse on the hub -->
+        <circle cx="490" cy="222" r="3" fill="#F2A93B">
+          <animate attributeName="opacity" values="1;0.2;1" dur="1.8s" repeatCount="indefinite"/>
+        </circle>
+      </svg>
+      <div class="diagram-caption">
+        Five separate dashed boxes = five separate computers, each with its own OS, its own
+        <code>claude</code> login, and its own <code>agents/runner.ts</code> (or the
+        <code>teamhub-client</code> port of it) process running independently. None of them
+        can see each other's disk, terminal, or session — the only thing they share is
+        TeamHub in the middle, reached over the network as an MCP server + a plain HTTP API.
+        Nothing here requires them to be on the same machine, same network segment, or even
+        the same continent.
+      </div>
+    </div>
+  </section>
+
+  <section id="spawning">
+    <div class="kicker">02 — how a session actually spawns</div>
+    <h2>The runner's cycle, not a chat window</h2>
+    <p class="lead">
+      Each account runs a small headless loop (<code>agents/runner.ts</code>).
+      It's not "keep one giant session open" — it's spawn a cycle, let it finish,
+      wait cheaply, spawn the next one, resuming the same underlying Claude Code
+      session id so context carries forward without re-reading everything.
+    </p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-dot">1</div>
+        <div><h4>Register &amp; kick off</h4>
+        <p>The runner registers its handle with TeamHub over MCP (no tokens spent — a plain metadata write), then spawns <code>claude -p</code> with a kickoff prompt built from the account's role and current assignment.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-dot">2</div>
+        <div><h4>Run one cycle</h4>
+        <p>That process does real work — reads its task, edits code, reports status — then exits. Its <code>stream-json</code> result carries the session id, the text summary, and the exact cost/token usage for that cycle.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-dot">3</div>
+        <div><h4>Long-poll, not sleep-and-poll</h4>
+        <p>Between cycles the runner blocks on <code>/api/wait-for-work</code> — a plain HTTP long-poll that costs zero tokens while idle, instead of waking up on a timer to ask an MCP tool "anything for me?"</p></div>
+      </div>
+      <div class="step">
+        <div class="step-dot">4</div>
+        <div><h4>Resume, don't restart</h4>
+        <p>The next cycle resumes the same session id from step 2 — the account picks up where it left off. A watchdog can also interrupt an in-flight cycle if the Lead redirects it mid-task.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-dot">5</div>
+        <div><h4>Report &amp; repeat</h4>
+        <p>Cost/tokens from every cycle post back to TeamHub (fire-and-forget, plain HTTP) so Owner can see spend per account and per session — then the loop returns to step 3.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="difference">
+    <div class="kicker">03 — what's different</div>
+    <h2>vs. just opening more terminals</h2>
+    <p class="lead">
+      You could run five Claude Code accounts in five terminal tabs today. The
+      difference is what happens between them — coordination, memory of who's
+      doing what, and a paper trail for what it cost.
+    </p>
+    <div class="compare">
+      <div class="card old">
+        <span class="card-label">Five terminals</span>
+        <h3>No shared source of truth</h3>
+        <ul>
+          <li>Work gets handed out by <b>copy-pasting instructions</b> into another tab</li>
+          <li>Nobody's status is visible without asking</li>
+          <li>A restarted session <b>re-reads everything</b> to recover context</li>
+          <li>Cost is whatever your terminal scrollback happens to show</li>
+        </ul>
+      </div>
+      <div class="card new">
+        <span class="card-label">TeamHub</span>
+        <h3>One task list, enforced</h3>
+        <ul>
+          <li>Handing out work requires a <b>real task</b> — assigning without one is rejected</li>
+          <li>Presence, status, and the board update <b>live</b> for every account</li>
+          <li>A session resumes by <b>session id</b>; the task description carries context, not a re-read</li>
+          <li><b>Cost tracked per account, per session</b> — visible on one dashboard</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="kicker">04 — what ships with it</div>
+    <h2>Feature surface</h2>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="num">01</div>
+        <h4>Kanban task board</h4>
+        <p>backlog → todo → in_progress → in_review → done/blocked, live across every account viewing it.</p>
+      </div>
+      <div class="feature">
+        <div class="num">02</div>
+        <h4>Sprints</h4>
+        <p>Group tasks into a dated sprint; the Lead plans against it, not a flat backlog.</p>
+      </div>
+      <div class="feature">
+        <div class="num">03</div>
+        <h4>Direct messages + chat room</h4>
+        <p>1:1 threads between any two handles, plus a combined project-wide feed.</p>
+      </div>
+      <div class="feature">
+        <div class="num">04</div>
+        <h4>Zero-token presence</h4>
+        <p>Long-poll registration and heartbeats run over plain HTTP — idle accounts cost nothing.</p>
+      </div>
+      <div class="feature">
+        <div class="num">05</div>
+        <h4>Interrupt &amp; redirect</h4>
+        <p>The Lead can redirect a developer mid-cycle; a watchdog catches it between turns.</p>
+      </div>
+      <div class="feature">
+        <div class="num">06</div>
+        <h4>Manual / auto mode</h4>
+        <p>Per-account switch — auto lets the loop run unattended, manual waits for a human trigger.</p>
+      </div>
+      <div class="feature">
+        <div class="num">07</div>
+        <h4>Task-linked accountability</h4>
+        <p>Assignment and status updates are rejected unless they point at a real, created task.</p>
+      </div>
+      <div class="feature">
+        <div class="num">08</div>
+        <h4>Usage &amp; cost dashboard</h4>
+        <p>Every cycle's exact cost and token counts, rolled up by account and by session.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="connecting">
+    <div class="kicker">05 — connecting an account</div>
+    <h2>One shared token, two ways in</h2>
+    <p class="lead">
+      Every account authenticates with the same Bearer token — printed by
+      <code>teamhub token</code> on the host machine, one shared secret for
+      the whole team rather than per-person accounts on TeamHub itself.
+      How it gets wired in depends on what's connecting.
+    </p>
+    <div class="compare">
+      <div class="card new">
+        <span class="card-label">Claude Code · CLI</span>
+        <h3>Direct HTTP MCP entry</h3>
+        <ul>
+          <li><code>teamhub install --mcp</code> writes a <b>teamhub</b> entry straight into <code>.mcp.json</code></li>
+          <li><code>{ "type": "http", "url": "…", "headers": { "Authorization": "Bearer &lt;token&gt;" } }</code></li>
+          <li>Headless runners read the same token from <code>TEAMHUB_TOKEN</code> (or <code>~/.teamhub/teamhub.token</code> on the host)</li>
+        </ul>
+      </div>
+      <div class="card new">
+        <span class="card-label">Claude Desktop</span>
+        <h3>Bridged through <code>mcp-remote</code></h3>
+        <ul>
+          <li>Desktop only speaks to local <b>command</b>-based MCP servers, not raw HTTP — so <code>teamhub install --desktop</code> writes a <code>command: npx mcp-remote …</code> entry instead</li>
+          <li>The Bearer token still travels with it, via <code>mcp-remote --header "Authorization: Bearer &lt;token&gt;"</code></li>
+          <li>Same TeamHub project, same task list, same account rules — just reached from a chat window instead of a terminal</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>TeamHub — a self-hosted, project-aware MCP server + CLI for running a multi-agent Claude Code team.<br/>
+    <a href="https://github.com/masterdeepak15/claude-team-protocol">github.com/masterdeepak15/claude-team-protocol</a></p>
+  </footer>
+
+</div>
+</body>
+</html>

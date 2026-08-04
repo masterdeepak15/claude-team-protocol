@@ -111,7 +111,9 @@ conversation snippets) that also explains who can actually give tasks
 (short answer: any human, on either side, at any time — the Lead isn't a
 gatekeeper).
 
-See **`docs/architecture.md`** for how TeamHub is put together, and
+See **`docs/architecture.md`** for how TeamHub is put together (or
+**`docs/agent-spawning.html`** — open it in a browser — for the same thing
+as a diagrammed one-pager, good for sharing outside the repo), and
 **`docs/skills-guide.md`** for how to write your own skills.
 
 ## Migrating from the old relay + planner version

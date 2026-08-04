@@ -35,6 +35,10 @@ PC1: Lead ───────────┼─▶│ messaging.ts         │
                           PC3: Dev B (same as PC2)
 ```
 
+A visual, diagrammed version of this — including the "different machines,
+different `claude` accounts" framing — is in
+[`docs/agent-spawning.html`](./agent-spawning.html); open it in a browser.
+
 ## Why one MCP server instead of two
 
 The previous design ran `relay` (JSON-file-backed messaging/presence) and
