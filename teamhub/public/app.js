@@ -28,6 +28,7 @@ const state = {
   tasks: [],
   selectedMemberHandle: null,
   eventsUnsub: null,
+  usageBy: "developer", // "developer" | "session" — sticky across re-renders of the Usage view
 };
 
 const content = document.getElementById("content");
@@ -183,7 +184,7 @@ function connectEvents() {
 }
 
 function renderView() {
-  const titles = { dashboard: "Dashboard", board: "Board", sprints: "Sprints", team: "Team", messages: "Messages", chatroom: "Chat Room" };
+  const titles = { dashboard: "Dashboard", board: "Board", sprints: "Sprints", team: "Team", messages: "Messages", chatroom: "Chat Room", usage: "Usage & Cost" };
   viewTitle.textContent = titles[state.currentView] || "TeamHub";
 
   if (!state.currentProjectId) {
@@ -204,6 +205,8 @@ function renderView() {
       return renderMessages();
     case "chatroom":
       return renderChatRoom();
+    case "usage":
+      return renderUsage();
     default:
       return renderDashboard();
   }
@@ -482,6 +485,130 @@ async function renderChatRoom() {
     textInput.value = "";
     await renderChatRoom();
   });
+}
+
+// Cost/token usage, reported by agents/runner.ts (and its teamhub-client
+// mirror) after every headless cycle — see teamhub/usage.ts. Fetched on
+// its own, independent of loadProjectData(), same pattern as
+// renderMessages/renderChatRoom: it's not part of the SSE change types
+// (message/task/sprint), so nothing else keeps it fresh automatically.
+async function renderUsage() {
+  content.innerHTML = `
+    <div class="seg-toggle" id="usageToggle">
+      <button data-by="developer" class="${state.usageBy === "developer" ? "active" : ""}">By developer</button>
+      <button data-by="session" class="${state.usageBy === "session" ? "active" : ""}">By session</button>
+    </div>
+    <div id="usageBody"><p class="empty small">Loading…</p></div>
+  `;
+
+  content.querySelectorAll("#usageToggle button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.usageBy = btn.dataset.by;
+      renderUsage();
+    });
+  });
+
+  const bodyEl = document.getElementById("usageBody");
+  let rows;
+  try {
+    rows = await api.getUsage(state.currentProjectId, state.usageBy);
+  } catch (err) {
+    bodyEl.innerHTML = `<p class="empty">Couldn't load usage: ${escapeHtml(String(err.message || err))}</p>`;
+    return;
+  }
+
+  if (!rows.length) {
+    bodyEl.innerHTML = `<p class="empty">No usage reported yet for this project. This fills in once a headless developer/tester/lead cycle finishes via agents/runner.ts — nothing to show for interactive sessions run straight from Claude Code.</p>`;
+    return;
+  }
+
+  const totalCost = rows.reduce((sum, r) => sum + (r.cost_usd || 0), 0);
+  const totalCycles = rows.reduce((sum, r) => sum + (r.cycles || 0), 0);
+  const totalInput = rows.reduce((sum, r) => sum + (r.input_tokens || 0), 0);
+  const totalOutput = rows.reduce((sum, r) => sum + (r.output_tokens || 0), 0);
+  const totalCacheRead = rows.reduce((sum, r) => sum + (r.cache_read_tokens || 0), 0);
+
+  bodyEl.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-value">${formatCost(totalCost)}</div><div class="stat-label">Total cost</div></div>
+      <div class="stat-card"><div class="stat-value">${formatNumber(totalCycles)}</div><div class="stat-label">Cycles</div></div>
+      <div class="stat-card"><div class="stat-value">${formatNumber(totalInput + totalOutput)}</div><div class="stat-label">Input + output tokens</div></div>
+      <div class="stat-card"><div class="stat-value">${formatNumber(totalCacheRead)}</div><div class="stat-label">Cache read tokens</div></div>
+    </div>
+    <div class="panel">
+      <h2>${state.usageBy === "developer" ? "Cost by developer" : "Cost by session"}</h2>
+      ${state.usageBy === "developer" ? developerUsageTable(rows) : sessionUsageTable(rows)}
+    </div>
+  `;
+}
+
+function developerUsageTable(rows) {
+  const sorted = [...rows].sort((a, b) => (b.cost_usd || 0) - (a.cost_usd || 0));
+  return `
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
+          <tr><th>Handle</th><th>Cost</th><th>Cycles</th><th>Sessions</th><th>Input</th><th>Output</th><th>Cache read</th><th>Cache write</th></tr>
+        </thead>
+        <tbody>
+          ${sorted
+            .map(
+              (r) => `
+            <tr>
+              <td>${escapeHtml(r.handle)}</td>
+              <td>${formatCost(r.cost_usd)}</td>
+              <td>${formatNumber(r.cycles)}</td>
+              <td>${formatNumber(r.sessions)}</td>
+              <td>${formatNumber(r.input_tokens)}</td>
+              <td>${formatNumber(r.output_tokens)}</td>
+              <td>${formatNumber(r.cache_read_tokens)}</td>
+              <td>${formatNumber(r.cache_write_tokens)}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function sessionUsageTable(rows) {
+  const sorted = [...rows].sort((a, b) => (b.cost_usd || 0) - (a.cost_usd || 0));
+  return `
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
+          <tr><th>Session</th><th>Handle</th><th>Cost</th><th>Cycles</th><th>Input</th><th>Output</th><th>First</th><th>Last</th></tr>
+        </thead>
+        <tbody>
+          ${sorted
+            .map(
+              (r) => `
+            <tr>
+              <td title="${escapeHtml(r.session_id)}">${escapeHtml((r.session_id || "").slice(0, 8))}…</td>
+              <td>${escapeHtml(r.handle)}</td>
+              <td>${formatCost(r.cost_usd)}</td>
+              <td>${formatNumber(r.cycles)}</td>
+              <td>${formatNumber(r.input_tokens)}</td>
+              <td>${formatNumber(r.output_tokens)}</td>
+              <td>${formatTime(r.first_ts)}</td>
+              <td>${formatTime(r.last_ts)}</td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function formatCost(n) {
+  const v = Number(n) || 0;
+  return `$${v.toFixed(v < 1 ? 4 : 2)}`;
+}
+
+function formatNumber(n) {
+  return Number(n || 0).toLocaleString();
 }
 
 // Deterministic handle -> color, so the same member always gets the same

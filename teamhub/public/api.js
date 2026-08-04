@@ -52,6 +52,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ project_id, from_handle, to_handle, text }),
     }),
+  // by: "developer" (default) or "session". opts: { since, until, handle }
+  getUsage: (id, by = "developer", opts = {}) => {
+    const params = new URLSearchParams({
+      by,
+      ...Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined && v !== "")),
+    });
+    return request(`/projects/${encodeURIComponent(id)}/usage?${params.toString()}`);
+  },
 };
 
 // Returns an unsubscribe function. `onEvent` receives parsed { kind, project_id, ts }

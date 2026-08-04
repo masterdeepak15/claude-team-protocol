@@ -249,6 +249,34 @@ button:hover {
   font-size: 0.85rem;
 }
 
+/* ---------- Segmented toggle (Usage view) ---------- */
+
+.seg-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.seg-toggle button {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: none;
+  border-radius: 0;
+  font-weight: 600;
+  padding: 8px 16px;
+}
+
+.seg-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.seg-toggle button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* ---------- Dashboard ---------- */
 
 .stat-grid {
