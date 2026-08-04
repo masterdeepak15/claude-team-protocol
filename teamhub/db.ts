@@ -65,6 +65,29 @@ CREATE TABLE IF NOT EXISTS comments (
   text TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+-- One row per finished 'claude -p' cycle (see agents/runner.ts finishCycle).
+-- Reported over plain bearer-gated HTTP (POST /api/usage), never over MCP —
+-- an MCP tool call here would just add more teamhub context weight to the
+-- very sessions this table exists to help shrink.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  handle TEXT NOT NULL,
+  session_id TEXT,
+  task_ref TEXT,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER,
+  num_turns INTEGER,
+  ts TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_usage_events_project ON usage_events(project_id, ts);
+CREATE INDEX IF NOT EXISTS idx_usage_events_handle ON usage_events(handle, ts);
+CREATE INDEX IF NOT EXISTS idx_usage_events_session ON usage_events(session_id);
 `;
 
 function migrate(db: Database.Database): void {

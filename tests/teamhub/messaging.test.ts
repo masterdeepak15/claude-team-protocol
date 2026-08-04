@@ -5,13 +5,15 @@ process.env.TEAMHUB_DB = ":memory:";
 describe("messaging module", () => {
   it("notifyAssignment lands in the recipient's inbox as task_assignment", async () => {
     const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask } = await import("../../teamhub/tasks.js");
     const { notifyAssignment, checkInbox } = await import("../../teamhub/messaging.js");
     createProject("proj-msg-a", "Messaging Project A", "PMSA");
-    notifyAssignment("proj-msg-a", "master-1", "dev-A", "PROJ-1", "Fix the bug");
+    const task = createTask("proj-msg-a", "Fix the bug");
+    notifyAssignment("proj-msg-a", "master-1", "dev-A", task.task_ref, "Fix the bug");
     const inbox = checkInbox("dev-A");
     expect(inbox).toHaveLength(1);
     expect(inbox[0].type).toBe("task_assignment");
-    expect(inbox[0].task_ref).toBe("PROJ-1");
+    expect(inbox[0].task_ref).toBe(task.task_ref);
   });
 
   it("checkInbox only returns unread messages, and marks them read", async () => {
@@ -28,10 +30,12 @@ describe("messaging module", () => {
   it("reportStatus routes to the project's registered master", async () => {
     const { createProject } = await import("../../teamhub/projects.js");
     const { registerMember } = await import("../../teamhub/members.js");
+    const { createTask } = await import("../../teamhub/tasks.js");
     const { reportStatus, checkInbox } = await import("../../teamhub/messaging.js");
     createProject("proj-msg-c", "Messaging Project C", "PMSC");
     registerMember("master-2", "proj-msg-c", "master");
-    reportStatus("proj-msg-c", "dev-C", "PROJ-2", "blocked", "waiting on API keys");
+    const task = createTask("proj-msg-c", "API integration");
+    reportStatus("proj-msg-c", "dev-C", task.task_ref, "blocked", "waiting on API keys");
     const inbox = checkInbox("master-2");
     expect(inbox).toHaveLength(1);
     expect(inbox[0].type).toBe("status_update");
@@ -76,10 +80,12 @@ describe("messaging module", () => {
 
   it("listMessages returns the full project history without marking anything read (for the UI)", async () => {
     const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask } = await import("../../teamhub/tasks.js");
     const { sendMessage, notifyAssignment, listMessages, checkInbox } = await import("../../teamhub/messaging.js");
     createProject("proj-msg-f", "Messaging Project F", "PMSF");
+    const task = createTask("proj-msg-f", "Do the thing");
     sendMessage("proj-msg-f", "master-1", "dev-F", "hello dev-F");
-    notifyAssignment("proj-msg-f", "master-1", "dev-G", "PMSF-1", "do the thing");
+    notifyAssignment("proj-msg-f", "master-1", "dev-G", task.task_ref, "do the thing");
 
     const all = listMessages("proj-msg-f");
     expect(all).toHaveLength(2);
@@ -126,9 +132,35 @@ describe("checkInbox atomicity", () => {
 
 describe("reportStatus requires a registered master", () => {
   it("throws instead of silently addressing a nonexistent master handle", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask } = await import("../../teamhub/tasks.js");
     const { reportStatus } = await import("../../teamhub/messaging.js");
+    createProject("proj-msg-no-master", "No Master Project", "PNM");
+    const task = createTask("proj-msg-no-master", "Some work");
     expect(() =>
-      reportStatus("proj-msg-no-master", "dev-A", "PROJ-1", "done", "finished it")
+      reportStatus("proj-msg-no-master", "dev-A", task.task_ref, "done", "finished it")
     ).toThrow(/no master/i);
+  });
+});
+
+describe("task_ref must reference a real task", () => {
+  it("notifyAssignment rejects a task_ref that was never created via create_task", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { notifyAssignment } = await import("../../teamhub/messaging.js");
+    createProject("proj-msg-phantom-a", "Phantom Task Project A", "PPA");
+    expect(() =>
+      notifyAssignment("proj-msg-phantom-a", "master-1", "dev-A", "MADE-UP-1", "do a thing")
+    ).toThrow(/no task/i);
+  });
+
+  it("reportStatus rejects a task_ref that was never created via create_task", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember } = await import("../../teamhub/members.js");
+    const { reportStatus } = await import("../../teamhub/messaging.js");
+    createProject("proj-msg-phantom-b", "Phantom Task Project B", "PPB");
+    registerMember("master-3", "proj-msg-phantom-b", "master");
+    expect(() =>
+      reportStatus("proj-msg-phantom-b", "dev-A", "MADE-UP-2", "done", "finished it")
+    ).toThrow(/no task/i);
   });
 });

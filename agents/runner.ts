@@ -328,7 +328,47 @@ function truncateForLog(text: string, max = 300): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-function finishCycle(stdout: string, handle: string): void {
+// Best-effort POST of the stream-json "result" event's own cost/usage
+// fields to /api/usage (plain bearer HTTP, same as wait-for-work — never
+// MCP). Fire-and-forget: a reporting hiccup must never fail or block a
+// cycle that otherwise succeeded, and the caller doesn't await this.
+async function reportUsage(
+  parsed: any,
+  handle: string,
+  teamhubBaseUrl: string | undefined,
+  project: string | undefined,
+  token: string | undefined
+): Promise<void> {
+  if (!teamhubBaseUrl || !project || !token) return; // e.g. under test / no env configured
+  const usage = parsed?.usage ?? {};
+  try {
+    await fetch(`${teamhubBaseUrl}/api/usage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        project_id: project,
+        handle,
+        session_id: parsed?.session_id,
+        cost_usd: parsed?.total_cost_usd ?? 0,
+        input_tokens: usage.input_tokens ?? 0,
+        output_tokens: usage.output_tokens ?? 0,
+        cache_read_tokens: usage.cache_read_input_tokens ?? 0,
+        cache_write_tokens: usage.cache_creation_input_tokens ?? 0,
+        duration_ms: parsed?.duration_ms,
+        num_turns: parsed?.num_turns,
+      }),
+    });
+  } catch {
+    // Usage reporting is best-effort bookkeeping, not part of the cycle's
+    // actual work — never let it surface as a cycle failure.
+  }
+}
+
+function finishCycle(
+  stdout: string,
+  handle: string,
+  usageCtx?: { teamhubBaseUrl?: string; project?: string; token?: string }
+): void {
   const parsed = JSON.parse(stdout);
   if (parsed.result) {
     console.log(parsed.result);
@@ -336,17 +376,19 @@ function finishCycle(stdout: string, handle: string): void {
     console.log(`[${handle}] cycle finished (no summary text returned by this turn).`);
   }
   if (parsed.session_id) writeFileSync(sessionFile(handle), parsed.session_id);
+  void reportUsage(parsed, handle, usageCtx?.teamhubBaseUrl, usageCtx?.project, usageCtx?.token);
 }
 
 export async function runCycle(
   prompt: string,
   handle: string,
   allowedTools: string,
-  permissionMode: string
+  permissionMode: string,
+  usageCtx?: { teamhubBaseUrl?: string; project?: string; token?: string }
 ): Promise<void> {
   const { result } = spawnClaude(prompt, handle, allowedTools, permissionMode);
   const { stdout } = await result;
-  finishCycle(stdout, handle);
+  finishCycle(stdout, handle, usageCtx);
 }
 
 export interface InterruptOutcome {
@@ -366,7 +408,8 @@ export async function runInterruptibleCycle(
   permissionMode: string,
   pollInterrupt: () => Promise<string | undefined>,
   watchdogIntervalMs: number,
-  spawn: typeof spawnClaude = spawnClaude
+  spawn: typeof spawnClaude = spawnClaude,
+  usageCtx?: { teamhubBaseUrl?: string; project?: string; token?: string }
 ): Promise<InterruptOutcome> {
   const { child, result } = spawn(prompt, handle, allowedTools, permissionMode);
   let stopped = false;
@@ -392,7 +435,7 @@ export async function runInterruptibleCycle(
 
   try {
     const { stdout } = await result;
-    finishCycle(stdout, handle);
+    finishCycle(stdout, handle, usageCtx);
   } catch (err) {
     if (!outcome.interrupted) throw err;
   } finally {
@@ -658,10 +701,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     throw err;
   }
 
+  const usageCtx = { teamhubBaseUrl, project: args.project, token };
+
   console.log(`Waiting for the first response from Claude — this can take a little while...`);
   for (;;) {
     try {
-      await runCycle(kickoffPrompt(args), args.handle, allowedTools, permissionMode);
+      await runCycle(kickoffPrompt(args), args.handle, allowedTools, permissionMode, usageCtx);
       break;
     } catch (err) {
       const backoffMs = usageLimitBackoffMs(err);
@@ -716,14 +761,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
           allowedTools,
           permissionMode,
           () => pollForInterrupt(teamhubUrl, args.handle, token),
-          args.watchdogInterval * 1000
+          args.watchdogInterval * 1000,
+          spawnClaude,
+          usageCtx
         );
         if (outcome.interrupted && outcome.interruptText) {
           console.log(`Interrupted by Lead: ${outcome.interruptText}`);
-          await runCycle(redirectPrompt(outcome.interruptText), args.handle, allowedTools, permissionMode);
+          await runCycle(redirectPrompt(outcome.interruptText), args.handle, allowedTools, permissionMode, usageCtx);
         }
       } else {
-        await runCycle(cyclePrompt(args), args.handle, allowedTools, permissionMode);
+        await runCycle(cyclePrompt(args), args.handle, allowedTools, permissionMode, usageCtx);
       }
     } catch (err) {
       const backoffMs = usageLimitBackoffMs(err);

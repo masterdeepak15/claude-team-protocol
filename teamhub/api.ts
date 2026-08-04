@@ -6,6 +6,7 @@ import * as sprints from "./sprints.js";
 import * as tasks from "./tasks.js";
 import * as messaging from "./messaging.js";
 import * as gate from "./gate.js";
+import * as usage from "./usage.js";
 import { onChange } from "./events.js";
 import { requireBearerToken, requireSession, verifyLoginToken, setSessionCookie, clearSessionCookie, revokeAllSessions, isLoggedIn } from "./auth.js";
 import type { Role } from "./members.js";
@@ -100,6 +101,33 @@ export function buildApiRouter(): Router {
     });
   });
 
+  // Reported by agents/runner.ts right after each `claude -p` cycle exits,
+  // straight from stream-json's "result" event (total_cost_usd/usage/
+  // session_id/duration_ms/num_turns) — plain HTTP, no MCP round-trip, so
+  // recording usage never itself adds to the usage it's recording.
+  router.post("/usage", requireBearerToken, (req, res) => {
+    const {
+      project_id, handle, session_id, task_ref,
+      cost_usd, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+      duration_ms, num_turns,
+    } = req.body ?? {};
+    if (!project_id || !handle) {
+      res.status(400).json({ error: "project_id and handle are required" });
+      return;
+    }
+    usage.recordUsage({
+      project_id, handle, session_id, task_ref,
+      cost_usd: Number(cost_usd) || 0,
+      input_tokens: Number(input_tokens) || 0,
+      output_tokens: Number(output_tokens) || 0,
+      cache_read_tokens: Number(cache_read_tokens) || 0,
+      cache_write_tokens: Number(cache_write_tokens) || 0,
+      duration_ms: duration_ms !== undefined ? Number(duration_ms) : undefined,
+      num_turns: num_turns !== undefined ? Number(num_turns) : undefined,
+    });
+    res.status(201).json({ ok: true });
+  });
+
   // --- Session-gated (the dashboard) — everything below requires login ---
   router.use(requireSession);
 
@@ -143,6 +171,17 @@ export function buildApiRouter(): Router {
     }
     const comments = tasks.listComments(req.params.taskRef);
     res.json({ ...task, comments });
+  });
+
+  // ?by=developer (default) or ?by=session, optional ?since=&until=&handle=
+  router.get("/projects/:id/usage", (req, res) => {
+    const { since, until, handle, by } = req.query;
+    const opts = {
+      since: typeof since === "string" ? since : undefined,
+      until: typeof until === "string" ? until : undefined,
+      handle: typeof handle === "string" ? handle : undefined,
+    };
+    res.json(by === "session" ? usage.bySession(req.params.id, opts) : usage.byDeveloper(req.params.id, opts));
   });
 
   router.get("/projects/:id/messages", (req, res) => {

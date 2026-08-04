@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "./db.js";
 import { setMemberStatus, touchMember } from "./members.js";
 import { emitChange } from "./events.js";
+import { getTaskByRef } from "./tasks.js";
 
 export interface Message {
   id: string;
@@ -40,6 +41,18 @@ export function notifyAssignment(
   task_ref: string,
   summary: string
 ): Message {
+  // Enforced here, not just documented, because the documentation alone
+  // wasn't stopping it: a Lead under time pressure would hand out work by
+  // describing it in a plain send_message instead of running it through
+  // create_task first, and that work would then never show up in
+  // list_tasks / the board — exactly the "not actually in our task list"
+  // problem this check exists to make impossible rather than just discouraged.
+  if (!getTaskByRef(task_ref)) {
+    throw new Error(
+      `No task "${task_ref}" exists yet. Call create_task first to get a real task_ref, ` +
+        `then notify_assignment with that ref — don't hand out work as a plain message.`
+    );
+  }
   const msg: Message = {
     id: randomUUID(),
     project_id,
@@ -87,6 +100,16 @@ export function reportStatus(
   status: string,
   note: string
 ): Message {
+  // Same enforcement as notifyAssignment: a status update against a
+  // task_ref that was never actually created would otherwise still "work"
+  // (the message sends fine) while leaving no trace in the task list at
+  // all — silently invisible on the board even though it looks reported.
+  if (!getTaskByRef(task_ref)) {
+    throw new Error(
+      `No task "${task_ref}" exists — report_status needs a real task_ref from create_task. ` +
+        `If this work was never turned into a task, create one first.`
+    );
+  }
   setMemberStatus(from_handle, status);
   const master = db
     .prepare(`SELECT handle FROM members WHERE project_id = ? AND role = 'master' LIMIT 1`)
@@ -204,7 +227,11 @@ export function registerTools(server: McpServer): void {
 
   server.tool(
     "send_message",
-    "Send a direct message to another team member's handle (master<->developer, either direction).",
+    "Send a direct message to another team member's handle (master<->developer, either direction). " +
+      "For general chat, questions, and check-ins only — NOT for handing out work (use create_task + " +
+      "notify_assignment, which now require a real task_ref) and NOT for progress/status updates on a " +
+      "task (use report_status, which links back to the task and updates the board). Anything sent as a " +
+      "plain message never appears in list_tasks or the dashboard board.",
     { project_id: z.string(), from_handle: z.string(), to_handle: z.string(), text: z.string() },
     async ({ project_id, from_handle, to_handle, text }) => {
       try {

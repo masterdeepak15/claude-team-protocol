@@ -89,6 +89,9 @@ unattended cycles, do this at the start of every turn:
 3. **Report status** — call `report_status(project_id, from_handle, task_ref,
    status, note)` at meaningful checkpoints (started, blocked, done), not
    after every tiny step. This automatically notifies the Team Lead.
+   `report_status` requires a real `task_ref` from `create_task` — if the
+   Lead handed you work as a plain message with no task_ref, ask them to
+   create the task first rather than reporting status against nothing.
 
 4. **If blocked or unsure** — don't guess silently and don't stall. Call
    `send_message(project_id, from_handle=<you>, to_handle=<lead>, text=...)`

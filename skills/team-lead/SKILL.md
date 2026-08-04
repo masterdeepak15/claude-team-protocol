@@ -67,6 +67,24 @@ directly into the conversation, or as a file to read):
    a follow-up test task (or the same task) to a registered tester handle
    before calling it `done`.
 
+**`notify_assignment` and `report_status` now hard-fail on a `task_ref`
+that doesn't exist yet** — `create_task` first, always. There is no
+shortcut path: handing out work by describing it in a plain `send_message`
+instead is exactly what this refuses, because that work would otherwise
+never show up in `list_tasks` or the board at all.
+
+**Write the task description so the developer never has to re-read
+everything to pick it up.** A fresh developer session (or a resumed one)
+pulls context via a single `get_task` call — not by re-reading your whole
+planning conversation. So the task's `description` should be
+self-contained: what to build/change, the relevant files or area of the
+codebase if you know them, and any constraint or decision from your
+conversation with Owner that isn't obvious from the code itself. Treat it
+as the one artifact carrying context forward, not a title with a vague
+one-liner. This is also the cheapest way to keep a developer's own session
+small — the alternative is them re-deriving intent by exploring more of
+the codebase or asking you follow-up questions.
+
 ## Core loop (each turn)
 
 Whether you're in an interactive session with Owner watching, or running
@@ -134,7 +152,8 @@ killed out from under them.
 - If a developer or tester reports `blocked`, treat it as high priority —
   respond before assigning any new tasks.
 - Never invent a task_ref. If nothing fits, `create_task` first, then
-  assign it.
+  assign it. `notify_assignment` and `report_status` will refuse a
+  `task_ref` that doesn't exist — this is enforced, not just a convention.
 
 ## What you should NOT do
 
