@@ -8,6 +8,9 @@ import {
   redirectPrompt,
   runInterruptibleCycle,
   logStreamEvent,
+  usageLimitBackoffMs,
+  parseResetDelayMs,
+  exitErrorMessage,
 } from "../src/runner.js";
 
 describe("parseArgs", () => {
@@ -163,23 +166,25 @@ describe("runInterruptibleCycle", () => {
 });
 
 describe("logStreamEvent", () => {
-  it("prints assistant text blocks", () => {
+  it("prints assistant text blocks and returns the text", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    logStreamEvent("master-1", {
+    const result = logStreamEvent("master-1", {
       type: "assistant",
       message: { content: [{ type: "text", text: "Created task BTS-3." }] },
     });
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("Created task BTS-3."));
+    expect(result).toBe("Created task BTS-3.");
     spy.mockRestore();
   });
 
-  it("prints tool_use blocks with the tool name", () => {
+  it("prints tool_use blocks with the tool name and returns undefined (no text block)", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    logStreamEvent("dev-A", {
+    const result = logStreamEvent("dev-A", {
       type: "assistant",
       message: { content: [{ type: "tool_use", name: "mcp__teamhub__check_inbox", input: { handle: "dev-A" } }] },
     });
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("calling mcp__teamhub__check_inbox"));
+    expect(result).toBeUndefined();
     spy.mockRestore();
   });
 
@@ -188,5 +193,48 @@ describe("logStreamEvent", () => {
     expect(() => logStreamEvent("h", { type: "something_unexpected" })).not.toThrow();
     expect(() => logStreamEvent("h", null)).not.toThrow();
     spy.mockRestore();
+  });
+});
+
+describe("parseResetDelayMs", () => {
+  it("computes the delay until the next occurrence of a resets time in a named zone", () => {
+    const now = new Date("2026-08-03T05:00:00Z");
+    const ms = parseResetDelayMs("You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)", now);
+    expect(ms).toBe(4 * 60 * 60 * 1000);
+  });
+
+  it("rolls over to the next day when the reset time has already passed today", () => {
+    const now = new Date("2026-08-03T13:00:00Z");
+    const ms = parseResetDelayMs("resets 2:30pm (Asia/Calcutta)", now);
+    expect(ms).toBe(20 * 60 * 60 * 1000);
+  });
+
+  it("returns undefined when there's no resets/timezone clause to parse", () => {
+    expect(parseResetDelayMs("You've hit your weekly limit.")).toBeUndefined();
+  });
+});
+
+describe("usageLimitBackoffMs", () => {
+  it("returns a backoff for Claude's weekly-limit notice, using the parsed reset time", () => {
+    const now = new Date("2026-08-03T05:00:00Z");
+    const err = new Error("claude exited with code 1: You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)");
+    expect(usageLimitBackoffMs(err, now)).toBe(4 * 60 * 60 * 1000);
+  });
+
+  it("returns undefined for unrelated errors so they keep propagating as real failures", () => {
+    expect(usageLimitBackoffMs(new Error("spawn claude ENOENT"))).toBeUndefined();
+    expect(usageLimitBackoffMs(new Error("claude exited with code 1: Not logged in"))).toBeUndefined();
+  });
+});
+
+describe("exitErrorMessage", () => {
+  it("leads with the assistant's last text block, which is where Claude's own limit notice appears", () => {
+    const message = exitErrorMessage(1, "You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)", "");
+    expect(message).toBe("claude exited with code 1: You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)");
+  });
+
+  it("regression: a weekly-limit exit is detected end-to-end by usageLimitBackoffMs", () => {
+    const err = new Error(exitErrorMessage(1, "You've hit your weekly limit · resets 2:30pm (Asia/Calcutta)", ""));
+    expect(usageLimitBackoffMs(err, new Date("2026-08-03T05:00:00Z"))).toBe(4 * 60 * 60 * 1000);
   });
 });

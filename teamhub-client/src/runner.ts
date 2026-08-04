@@ -102,17 +102,20 @@ export function allowedToolsFor(role: RunnerArgs["role"]): string {
   return ALLOWED_TOOLS_WORKER;
 }
 
+// Registration itself no longer happens inside these prompts — see
+// registerViaMcp(), called directly over MCP before Claude is ever
+// spawned (main()). Matches agents/runner.ts (the server package's copy).
 export function kickoffPrompt(args: RunnerArgs): string {
   if (args.role === "master") {
-    return `You are the Team Lead for project "${args.project}". Your handle is "${args.handle}". First, call the teamhub register tool with handle="${args.handle}", role="master", project_id="${args.project}". Then check your task tracker for open backlog items in this project and summarize them.`;
+    return `You are the Team Lead for project "${args.project}". Your handle is "${args.handle}" (role="master") — already registered with TeamHub, no action needed for that. Check your task tracker for open backlog items in this project and summarize them.`;
   }
   if (args.role === "tester") {
-    return `You are a Tester on project "${args.project}". Your handle is "${args.handle}", your Team Lead's handle is "${args.masterHandle}". First, call the teamhub register tool with handle="${args.handle}", role="tester", project_id="${args.project}", mode="${args.mode}". Then check your inbox for an assigned test task.`;
+    return `You are a Tester on project "${args.project}". Your handle is "${args.handle}" (role="tester", mode="${args.mode}"), your Team Lead's handle is "${args.masterHandle}" — you're already registered with TeamHub, no action needed for that. Check your inbox for an assigned test task.`;
   }
   if (args.role === "analyst") {
-    return `You are an Analyst on project "${args.project}". Your handle is "${args.handle}", your Team Lead's handle is "${args.masterHandle}". First, call the teamhub register tool with handle="${args.handle}", role="analyst", project_id="${args.project}", mode="${args.mode}". Then check your inbox for a research/clarification request, and skim the project's open tasks for anything ambiguous the Lead should know about before assigning it.`;
+    return `You are an Analyst on project "${args.project}". Your handle is "${args.handle}" (role="analyst", mode="${args.mode}"), your Team Lead's handle is "${args.masterHandle}" — you're already registered with TeamHub, no action needed for that. Check your inbox for a research/clarification request, and skim the project's open tasks for anything ambiguous the Lead should know about before assigning it.`;
   }
-  return `You are a Developer on project "${args.project}". Your handle is "${args.handle}", your Team Lead's handle is "${args.masterHandle}". First, call the teamhub register tool with handle="${args.handle}", role="developer", project_id="${args.project}", mode="${args.mode}". Then check your inbox for an assigned task.`;
+  return `You are a Developer on project "${args.project}". Your handle is "${args.handle}" (role="developer", mode="${args.mode}"), your Team Lead's handle is "${args.masterHandle}" — you're already registered with TeamHub, no action needed for that. Check your inbox for an assigned task.`;
 }
 
 export function cyclePrompt(args: RunnerArgs): string {
@@ -183,6 +186,14 @@ interface SpawnHandle {
 // its argument-array injection protection on Windows once shell:true is
 // set. cross-spawn resolves the real executable via normal PATH/PATHEXT
 // lookup without shell interpretation.
+// Extracted as a pure function purely so this exact assembly — assistant
+// text first, stderr second — is directly testable without spawning a
+// real `claude` process end-to-end. Matches agents/runner.ts.
+export function exitErrorMessage(code: number | null, lastAssistantText: string, stderr: string): string {
+  const detail = [lastAssistantText, stderr.trim()].filter(Boolean).join(" — ");
+  return `claude exited with code ${code}: ${detail || "(no output captured)"}`;
+}
+
 function spawnClaude(
   prompt: string,
   handle: string,
@@ -212,6 +223,10 @@ function spawnClaude(
   let lineBuffer = "";
   let stderr = "";
   let finalResult: unknown;
+  // Claude Code's own "you've hit your weekly limit · resets ..." notice
+  // arrives as a normal assistant text block over stdout, not stderr — see
+  // agents/runner.ts (the server package's copy) for the full rationale.
+  let lastAssistantText = "";
 
   child.stdout?.on("data", (chunk) => {
     lineBuffer += chunk;
@@ -226,7 +241,8 @@ function spawnClaude(
       } catch {
         continue; // a malformed/partial line should never crash the runner
       }
-      logStreamEvent(handle, event);
+      const text = logStreamEvent(handle, event);
+      if (text) lastAssistantText = text;
       if (event?.type === "result") finalResult = event;
     }
   });
@@ -238,7 +254,7 @@ function spawnClaude(
     child.on("error", reject);
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`claude exited with code ${code}: ${stderr}`));
+        reject(new Error(exitErrorMessage(code, lastAssistantText, stderr)));
       } else if (finalResult === undefined) {
         reject(new Error(`claude exited 0 but no "result" event was seen in its stream-json output: ${stderr}`));
       } else {
@@ -252,23 +268,29 @@ function spawnClaude(
 
 // Best-effort, defensive console progress for stream-json events. See
 // agents/runner.ts (the server package's copy) for the full rationale —
-// kept identical here so both packages behave the same way.
-export function logStreamEvent(handle: string, event: any): void {
+// kept identical here so both packages behave the same way. Returns the
+// last assistant text block it printed (or undefined) so spawnClaude can
+// fold it into the exit error above without duplicating this walk.
+export function logStreamEvent(handle: string, event: any): string | undefined {
   try {
     if (event?.type === "assistant" && Array.isArray(event.message?.content)) {
+      let lastText: string | undefined;
       for (const block of event.message.content) {
         if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
           console.log(`[${handle}] ${truncateForLog(block.text.trim())}`);
+          lastText = block.text.trim();
         } else if (block?.type === "tool_use" && typeof block.name === "string") {
           console.log(`[${handle}] → calling ${block.name}(${truncateForLog(JSON.stringify(block.input ?? {}), 150)})`);
         }
       }
+      return lastText;
     } else if (event?.type === "system" && event.subtype === "init") {
       console.log(`[${handle}] session started${event.model ? ` (model: ${event.model})` : ""}.`);
     }
   } catch {
     // A logging hiccup must never break the actual cycle.
   }
+  return undefined;
 }
 
 function truncateForLog(text: string, max = 300): string {
@@ -350,6 +372,39 @@ export async function runInterruptibleCycle(
   return outcome;
 }
 
+// Registers this handle directly over MCP — no `claude -p` process, no
+// tokens, same as pollForInterrupt below. See agents/runner.ts (the
+// server package's copy) for the full rationale. Idempotent (registerMember
+// is an upsert), so safe to call every time the runner starts.
+export async function registerViaMcp(
+  teamhubMcpUrl: string,
+  handle: string,
+  role: "master" | "developer" | "tester" | "analyst",
+  project: string,
+  mode: "auto" | "manual",
+  token: string
+): Promise<void> {
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+  const client = new Client({ name: "teamhub-client-register", version: "1.0.0" });
+  const transport = new StreamableHTTPClientTransport(new URL(teamhubMcpUrl), {
+    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  await client.connect(transport);
+  try {
+    const result = await client.callTool({
+      name: "register",
+      arguments: { handle, role, project_id: project, mode },
+    });
+    if (result.isError) {
+      const content = (result.content as Array<{ type: string; text?: string }> | undefined)?.[0];
+      throw new Error(content?.text ?? "register tool returned an error");
+    }
+  } finally {
+    await client.close();
+  }
+}
+
 // Polls TeamHub directly over MCP (not by shelling out to `claude`) so the
 // watchdog can check for an interrupt every few seconds without spawning a
 // whole extra `claude -p` process per tick.
@@ -423,6 +478,83 @@ export function teamhubBaseUrl(): string {
   );
 }
 
+// Claude Code's own "you've hit your weekly/usage limit · resets <time> " +
+// "(<zone>)" notice — see agents/runner.ts (the server package's copy) for
+// the full rationale.
+const USAGE_LIMIT_PATTERN = /\b(?:hit\s+your|usage|weekly|daily|monthly)\s+(?:[a-z]+\s+)?limit\b/i;
+const DEFAULT_LIMIT_BACKOFF_MS = 15 * 60 * 1000;
+const MIN_BACKOFF_MS = 30 * 1000;
+
+// Best-effort parse of "resets 2:30pm (Asia/Calcutta)" into a millisecond
+// delay from now. See agents/runner.ts (the server package's copy) for the
+// full rationale — kept identical here.
+export function parseResetDelayMs(message: string, now: Date = new Date()): number | undefined {
+  const match = message.match(/resets?\s+(\d{1,2}):(\d{2})\s*([ap]m)\s*\(([^)]+)\)/i);
+  if (!match) return undefined;
+  const [, hStr, mStr, ampm, tz] = match;
+  let hour = Number(hStr) % 12;
+  if (ampm.toLowerCase() === "pm") hour += 12;
+  const minute = Number(mStr);
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).formatToParts(now);
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+    const zoneNow = new Date(Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")));
+    const offsetMs = zoneNow.getTime() - now.getTime();
+    let resetUtc = new Date(Date.UTC(get("year"), get("month") - 1, get("day"), hour, minute, 0) - offsetMs);
+    if (resetUtc.getTime() <= now.getTime()) resetUtc = new Date(resetUtc.getTime() + 24 * 60 * 60 * 1000);
+    const delay = resetUtc.getTime() - now.getTime();
+    return Number.isFinite(delay) && delay > 0 ? delay : undefined;
+  } catch {
+    return undefined; // unrecognized/invalid IANA zone name
+  }
+}
+
+// Returns a backoff duration if `err` looks like Claude's usage-limit
+// notice, or undefined if it's some other failure that should keep
+// propagating as a real error instead of being silently retried forever.
+export function usageLimitBackoffMs(err: unknown, now: Date = new Date()): number | undefined {
+  const message = err instanceof Error ? err.message : String(err);
+  if (!USAGE_LIMIT_PATTERN.test(message)) return undefined;
+  const parsed = parseResetDelayMs(message, now);
+  return Math.max(parsed ?? DEFAULT_LIMIT_BACKOFF_MS, MIN_BACKOFF_MS);
+}
+
+// Waits out a usage-limit backoff in short chunks via the existing
+// zero-token long-poll (waitForPendingWork) instead of a flat sleep, so
+// this handle's last_seen keeps getting touched during the whole backoff.
+async function sleepWithHeartbeat(
+  ms: number,
+  baseUrl: string,
+  role: RunnerArgs["role"],
+  handle: string,
+  project: string,
+  token: string
+): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const chunk = Math.min(deadline - Date.now(), 60_000);
+    try {
+      await waitForPendingWork(baseUrl, role, handle, project, token, chunk);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(chunk, 5000)));
+    }
+  }
+}
+
+function describeLimitError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.split("\n")[0];
+}
+
 function teamhubTokenFromEnv(): string {
   const token = process.env.TEAMHUB_TOKEN;
   if (!token) {
@@ -443,6 +575,7 @@ export async function main(argv: string[]): Promise<void> {
   const baseUrl = teamhubBaseUrl();
   const token = teamhubTokenFromEnv();
   const watchdogEnabled = args.role !== "master" && args.mode === "auto";
+  const heartbeat = (ms: number) => sleepWithHeartbeat(ms, baseUrl, args.role, args.handle, args.project, token);
 
   console.log(
     `Starting ${args.role} (${args.handle}) on project ${args.project}` +
@@ -463,31 +596,64 @@ export async function main(argv: string[]): Promise<void> {
     );
   }
 
-  console.log(`Waiting for the first response from Claude — this can take a little while...`);
+  // Comes online immediately, over MCP, with zero Claude tokens spent —
+  // does not wait on (or get blocked by) any usage limit below.
+  console.log(`Registering ${args.handle} with TeamHub (no Claude tokens used for this)...`);
   try {
-    await runCycle(kickoffPrompt(args), args.handle, allowedTools, permissionMode);
+    await registerViaMcp(url, args.handle, args.role, args.project, args.mode, token);
   } catch (err) {
     console.error(
-      `Initial registration cycle failed for ${args.handle}. Common causes: ` +
-        `"claude" not on PATH, not logged in (run "claude /login"), or the ` +
-        `MCP servers this needs (see the .mcp.json warning above, if any) ` +
-        `aren't reachable. Underlying error:`,
+      `Could not register ${args.handle} with TeamHub. Common causes: TeamHub isn't running, ` +
+        `TEAMHUB_URL/TEAMHUB_TOKEN are wrong, or the server is unreachable. Underlying error:`,
       err
     );
     throw err;
   }
 
+  console.log(`Waiting for the first response from Claude — this can take a little while...`);
   for (;;) {
+    try {
+      await runCycle(kickoffPrompt(args), args.handle, allowedTools, permissionMode);
+      break;
+    } catch (err) {
+      const backoffMs = usageLimitBackoffMs(err);
+      if (backoffMs === undefined) {
+        console.error(
+          `Initial discovery cycle failed for ${args.handle}. Common causes: ` +
+            `"claude" not on PATH, not logged in (run "claude /login"), or the ` +
+            `MCP servers this needs (see the .mcp.json warning above, if any) ` +
+            `aren't reachable. Underlying error:`,
+          err
+        );
+        throw err;
+      }
+      console.warn(
+        `${args.handle}: hit Claude's usage limit on the first cycle (${describeLimitError(err)}). ` +
+          `Backing off ~${Math.round(backoffMs / 60000)} min before retrying — already registered ` +
+          `and online with TeamHub, no further tokens spent until then.`
+      );
+      await heartbeat(backoffMs);
+    }
+  }
+
+  for (;;) {
+    let pending: boolean;
     try {
       // Blocks here — no sleep, no fixed interval — until TeamHub reports
       // this handle actually has something pending, or args.cycle (now a
       // long-poll timeout/reconnect ceiling, not a literal sleep duration)
       // elapses. Costs nothing either way — no claude process, no tokens.
-      const pending = await waitForPendingWork(baseUrl, args.role, args.handle, args.project, token, args.cycle * 1000);
-      if (!pending) {
-        console.log(`${args.handle}: still idle after waiting — reconnecting to wait again (no tokens used).`);
-        continue;
-      }
+      pending = await waitForPendingWork(baseUrl, args.role, args.handle, args.project, token, args.cycle * 1000);
+    } catch (err) {
+      console.error(`${args.handle}: wait-for-work failed, retrying in 5s:`, err);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      continue;
+    }
+    if (!pending) {
+      console.log(`${args.handle}: still idle after waiting — reconnecting to wait again (no tokens used).`);
+      continue;
+    }
+    try {
       if (watchdogEnabled) {
         const outcome = await runInterruptibleCycle(
           cyclePrompt(args),
@@ -505,8 +671,18 @@ export async function main(argv: string[]): Promise<void> {
         await runCycle(cyclePrompt(args), args.handle, allowedTools, permissionMode);
       }
     } catch (err) {
-      console.error(`${args.handle}: wait-for-work failed, retrying in 5s:`, err);
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      const backoffMs = usageLimitBackoffMs(err);
+      if (backoffMs === undefined) {
+        console.error(`${args.handle}: cycle failed, retrying in 5s:`, err);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        continue;
+      }
+      console.warn(
+        `${args.handle}: hit Claude's usage limit (${describeLimitError(err)}). Backing off ` +
+          `~${Math.round(backoffMs / 60000)} min before retrying — still registered and online with ` +
+          `TeamHub, no further tokens spent until then.`
+      );
+      await heartbeat(backoffMs);
     }
   }
 }
