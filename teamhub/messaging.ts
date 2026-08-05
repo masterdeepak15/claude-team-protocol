@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
-import { setMemberStatus, touchMember } from "./members.js";
+import { setMemberStatus, touchMember, OWNER_HANDLE } from "./members.js";
 import { emitChange } from "./events.js";
 import { getTaskByRef } from "./tasks.js";
 
@@ -202,6 +202,37 @@ export function listMessages(project_id: string, handle?: string): Message[] {
   sql += ` ORDER BY ts ASC`;
   const rows = db.prepare(sql).all(...params) as any[];
   return rows.map(rowToMessage);
+}
+
+// Powers the dashboard's notification bell. Deliberately scoped to
+// `to_handle = OWNER_HANDLE` only — this is "does the human have something
+// unread", not a general unread-count API, and it must never touch (or be
+// able to touch) messages addressed to an agent handle. Those rows have
+// real operational meaning: an agent's own checkInbox() is what's supposed
+// to flip them to read, and it relies on read=0 meaning "not yet delivered
+// to that agent's own cycle". Marking one read from here first would mean
+// the agent's next cycle silently never sees it.
+export function unreadForOwner(project_id: string): Message[] {
+  const rows = db
+    .prepare(`SELECT * FROM messages WHERE project_id = ? AND to_handle = ? AND read = 0 ORDER BY ts ASC`)
+    .all(project_id, OWNER_HANDLE) as any[];
+  return rows.map(rowToMessage);
+}
+
+// The dashboard calls this once the human has actually opened a thread —
+// not when a notification merely appears — so "read" keeps meaning "a
+// person looked at this," same intent as the badge is supposed to reflect.
+// The `to_handle = OWNER_HANDLE` guard here isn't just belt-and-suspenders:
+// it's what makes it safe to accept arbitrary ids from the browser at all,
+// since it can only ever flip rows that were never load-bearing for any
+// agent's inbox delivery in the first place.
+export function markOwnerMessagesRead(project_id: string, ids: string[]): number {
+  if (!ids.length) return 0;
+  const placeholders = ids.map(() => "?").join(",");
+  const result = db
+    .prepare(`UPDATE messages SET read = 1 WHERE project_id = ? AND to_handle = ? AND id IN (${placeholders})`)
+    .run(project_id, OWNER_HANDLE, ...ids);
+  return result.changes;
 }
 
 export function registerTools(server: McpServer): void {

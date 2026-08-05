@@ -52,6 +52,19 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ project_id, from_handle, to_handle, text }),
     }),
+  getUnreadMessages: (id) => request(`/projects/${encodeURIComponent(id)}/messages/unread`),
+  markMessagesRead: (id, ids) =>
+    request(`/projects/${encodeURIComponent(id)}/messages/mark-read`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }),
+  updateTask: (taskRef, patch) =>
+    request(`/tasks/${encodeURIComponent(taskRef)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
   // by: "developer" (default) or "session". opts: { since, until, handle }
   getUsage: (id, by = "developer", opts = {}) => {
     const params = new URLSearchParams({

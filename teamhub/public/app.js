@@ -29,7 +29,13 @@ const state = {
   selectedMemberHandle: null,
   eventsUnsub: null,
   usageBy: "developer", // "developer" | "session" — sticky across re-renders of the Usage view
+  unreadMessages: [], // messages addressed to owner, read = 0 — powers the notification bell
+  boardFilters: { assignee: "", priority: "", search: "" },
+  threadMessageCount: 0, // last-rendered count for the open 1:1 thread, to detect "new while scrolled up"
+  roomMessageCount: 0, // same, for the chat room feed
 };
+
+const THEME_KEY = "teamhub-theme";
 
 const content = document.getElementById("content");
 const viewTitle = document.getElementById("viewTitle");
@@ -45,6 +51,8 @@ const logoutBtn = document.getElementById("logoutBtn");
 async function init() {
   wireNav();
   wireSidebarToggle();
+  wireTheme();
+  wireNotifBell();
   setUnauthorizedHandler(showLoginScreen);
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -105,6 +113,7 @@ async function showApp() {
   }
   renderView();
   connectEvents();
+  refreshNotifications();
 }
 
 function renderProjectPicker() {
@@ -117,6 +126,7 @@ function renderProjectPicker() {
     await loadProjectData();
     renderView();
     connectEvents();
+    refreshNotifications();
   };
 }
 
@@ -155,6 +165,73 @@ function closeSidebarOnMobile() {
   document.getElementById("sidebar").classList.remove("open");
 }
 
+function wireTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  const initial = saved || (window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  applyTheme(initial);
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+    applyTheme(next);
+    localStorage.setItem(THEME_KEY, next);
+  });
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  document.getElementById("themeIcon").innerHTML = theme === "light" ? "&#9788;" : "&#9789;";
+}
+
+function wireNotifBell() {
+  const bell = document.getElementById("notifBell");
+  const dropdown = document.getElementById("notifDropdown");
+  bell.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dropdown.classList.toggle("hidden");
+  });
+  document.addEventListener("click", (e) => {
+    if (!dropdown.contains(e.target) && e.target !== bell) dropdown.classList.add("hidden");
+  });
+}
+
+// Refreshes the bell's count/list. Deliberately doesn't mark anything as
+// read — a notification appearing is not the same as being read (that only
+// happens once the human actually opens the relevant thread; see
+// renderMessages/renderChatRoom's markVisibleAsRead calls).
+async function refreshNotifications() {
+  if (!state.currentProjectId) return;
+  try {
+    state.unreadMessages = await api.getUnreadMessages(state.currentProjectId);
+  } catch {
+    return; // stale badge for one cycle is fine; don't throw over a notification refresh
+  }
+  const badge = document.getElementById("notifBadge");
+  const count = state.unreadMessages.length;
+  badge.textContent = count > 9 ? "9+" : String(count);
+  badge.classList.toggle("hidden", count === 0);
+
+  const list = document.getElementById("notifList");
+  list.innerHTML = count
+    ? state.unreadMessages
+        .map(
+          (m) => `
+      <button class="notif-item" data-from="${escapeHtml(m.from_handle)}">
+        <span class="notif-from">${escapeHtml(m.from_handle)}</span>
+        <span class="notif-text">${escapeHtml(m.text)}</span>
+        <span class="notif-time">${formatTime(m.ts)}</span>
+      </button>`
+        )
+        .join("")
+    : `<p class="empty small">You're all caught up.</p>`;
+
+  list.querySelectorAll(".notif-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.getElementById("notifDropdown").classList.add("hidden");
+      state.selectedMemberHandle = btn.dataset.from;
+      document.querySelector('.nav-item[data-view="messages"]').click();
+    });
+  });
+}
+
 function connectEvents() {
   if (state.eventsUnsub) state.eventsUnsub();
   if (state.presenceInterval) clearInterval(state.presenceInterval);
@@ -164,6 +241,7 @@ function connectEvents() {
     connDot.classList.add("connected");
     await loadProjectData();
     renderView();
+    refreshNotifications();
   });
   setTimeout(() => connDot.classList.add("connected"), 300);
 
@@ -270,21 +348,79 @@ function renderMemberTable(members) {
 }
 
 function renderBoard() {
+  const f = state.boardFilters;
   content.innerHTML = `
-    <div class="board">
-      ${TASK_STATUSES.map((s) => {
-        const columnTasks = state.tasks.filter((t) => t.status === s);
-        return `
-          <div class="board-column">
-            <div class="board-column-header">${STATUS_LABELS[s]} <span class="count">${columnTasks.length}</span></div>
-            <div class="board-column-body">
-              ${columnTasks.map(taskCard).join("") || `<p class="empty small">No tasks</p>`}
-            </div>
-          </div>
-        `;
-      }).join("")}
+    <div class="board-toolbar">
+      <input type="text" id="boardSearch" placeholder="Search by ref or title…" value="${escapeHtml(f.search)}" />
+      <select id="boardAssigneeFilter">
+        <option value="">All assignees</option>
+        <option value="__unassigned__" ${f.assignee === "__unassigned__" ? "selected" : ""}>Unassigned</option>
+        ${state.members
+          .map((m) => `<option value="${escapeHtml(m.handle)}" ${f.assignee === m.handle ? "selected" : ""}>${escapeHtml(m.handle)}</option>`)
+          .join("")}
+      </select>
+      <select id="boardPriorityFilter">
+        <option value="">All priorities</option>
+        ${["urgent", "high", "medium", "low"]
+          .map((p) => `<option value="${p}" ${f.priority === p ? "selected" : ""}>${p[0].toUpperCase()}${p.slice(1)}</option>`)
+          .join("")}
+      </select>
+      <button type="button" class="btn-link" id="boardClearFilters" ${f.assignee || f.priority || f.search ? "" : "disabled"}>Clear filters</button>
+      <span class="board-toolbar-count" id="boardToolbarCount"></span>
     </div>
+    <div class="board" id="boardColumns"></div>
   `;
+
+  document.getElementById("boardSearch").addEventListener("input", (e) => {
+    state.boardFilters.search = e.target.value;
+    renderBoardColumns(); // not a full renderBoard() — would drop input focus mid-keystroke
+  });
+  document.getElementById("boardAssigneeFilter").addEventListener("change", (e) => {
+    state.boardFilters.assignee = e.target.value;
+    renderBoard();
+  });
+  document.getElementById("boardPriorityFilter").addEventListener("change", (e) => {
+    state.boardFilters.priority = e.target.value;
+    renderBoard();
+  });
+  document.getElementById("boardClearFilters").addEventListener("click", () => {
+    state.boardFilters = { assignee: "", priority: "", search: "" };
+    renderBoard();
+  });
+
+  renderBoardColumns();
+}
+
+function filteredBoardTasks() {
+  const f = state.boardFilters;
+  const needle = f.search.trim().toLowerCase();
+  return state.tasks.filter((t) => {
+    if (f.assignee === "__unassigned__" && t.assignee_handle) return false;
+    if (f.assignee && f.assignee !== "__unassigned__" && t.assignee_handle !== f.assignee) return false;
+    if (f.priority && t.priority !== f.priority) return false;
+    if (needle && !t.task_ref.toLowerCase().includes(needle) && !t.title.toLowerCase().includes(needle)) return false;
+    return true;
+  });
+}
+
+function renderBoardColumns() {
+  const filtered = filteredBoardTasks();
+  const countEl = document.getElementById("boardToolbarCount");
+  if (countEl) countEl.textContent = `${filtered.length} of ${state.tasks.length} tasks`;
+
+  document.getElementById("boardColumns").innerHTML = TASK_STATUSES.map((s) => {
+    const columnTasks = filtered.filter((t) => t.status === s);
+    return `
+      <div class="board-column">
+        <div class="board-column-header">${STATUS_LABELS[s]} <span class="count">${columnTasks.length}</span></div>
+        <div class="board-column-body">
+          ${columnTasks.map(taskCard).join("") || `<p class="empty small">No tasks</p>`}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  wireTaskCardActions();
 }
 
 function taskCard(t) {
@@ -293,11 +429,68 @@ function taskCard(t) {
       <div class="task-ref">${escapeHtml(t.task_ref)}</div>
       <div class="task-title">${escapeHtml(t.title)}</div>
       <div class="task-meta">
-        ${t.assignee_handle ? `<span class="badge">${escapeHtml(t.assignee_handle)}</span>` : `<span class="badge unassigned">unassigned</span>`}
         <span class="badge priority-${escapeHtml(t.priority)}">${escapeHtml(t.priority)}</span>
+      </div>
+      <div class="task-actions">
+        <select class="task-status-select" data-task-ref="${escapeHtml(t.task_ref)}" aria-label="Change status for ${escapeHtml(t.task_ref)}">
+          ${TASK_STATUSES.map((s) => `<option value="${s}" ${s === t.status ? "selected" : ""}>${STATUS_LABELS[s]}</option>`).join("")}
+        </select>
+        <select class="task-assignee-select" data-task-ref="${escapeHtml(t.task_ref)}" aria-label="Reassign ${escapeHtml(t.task_ref)}">
+          <option value="" ${!t.assignee_handle ? "selected" : ""} disabled>Unassigned</option>
+          ${state.members
+            .map((m) => `<option value="${escapeHtml(m.handle)}" ${t.assignee_handle === m.handle ? "selected" : ""}>${escapeHtml(m.handle)}</option>`)
+            .join("")}
+        </select>
       </div>
     </div>
   `;
+}
+
+function wireTaskCardActions() {
+  document.querySelectorAll(".task-status-select").forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      const taskRef = sel.dataset.taskRef;
+      try {
+        await api.updateTask(taskRef, { status: sel.value });
+        await loadProjectData();
+        renderBoardColumns();
+        showToast(`${taskRef} moved to ${STATUS_LABELS[sel.value]}.`);
+      } catch (err) {
+        showToast(`Couldn't update ${taskRef}: ${err.message || err}`, true);
+        renderBoardColumns(); // revert the select back to the real status
+      }
+    });
+  });
+  document.querySelectorAll(".task-assignee-select").forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      const taskRef = sel.dataset.taskRef;
+      // "Unassigned" is a disabled placeholder — assignTask has no concept
+      // of clearing an assignee, so there's nothing meaningful to send yet.
+      if (!sel.value) return;
+      try {
+        await api.updateTask(taskRef, { assignee_handle: sel.value });
+        await loadProjectData();
+        renderBoardColumns();
+        showToast(`${taskRef} reassigned to ${sel.value}.`);
+      } catch (err) {
+        showToast(`Couldn't reassign ${taskRef}: ${err.message || err}`, true);
+        renderBoardColumns();
+      }
+    });
+  });
+}
+
+function showToast(message, isError = false) {
+  let toast = document.getElementById("toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.className = `toast ${isError ? "toast-error" : ""} show`;
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => toast.classList.remove("show"), 3200);
 }
 
 function renderSprints() {
@@ -377,10 +570,52 @@ function renderTeam() {
   });
 }
 
+function isNearBottom(el, threshold = 96) {
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+}
+
+// The dashboard fully replaces these containers' innerHTML on every
+// re-render (including ones triggered by someone else's message arriving
+// over SSE) — a plain "scroll to bottom" on every render was yanking the
+// human back down mid-read. This restores the exact scroll offset when
+// they weren't already at the bottom, and surfaces a small pill instead of
+// silently doing nothing.
+function applyScrollBehavior(el, wasAtBottom, prevScrollTop, grew, jumpBtnId) {
+  const jumpBtn = document.getElementById(jumpBtnId);
+  if (wasAtBottom) {
+    el.scrollTop = el.scrollHeight;
+    jumpBtn?.classList.add("hidden");
+  } else {
+    el.scrollTop = prevScrollTop;
+    if (grew) jumpBtn?.classList.remove("hidden");
+  }
+}
+
+// Called only once messages have actually been rendered into view — never
+// just because a notification badge appeared. Only ever touches rows
+// addressed to owner (see markOwnerMessagesRead server-side for why that
+// matters).
+async function markVisibleAsRead(messages) {
+  const unreadIds = messages.filter((m) => m.to_handle === OWNER_HANDLE && !m.read).map((m) => m.id);
+  if (!unreadIds.length) return;
+  try {
+    await api.markMessagesRead(state.currentProjectId, unreadIds);
+  } catch {
+    return; // best-effort — worst case the badge stays slightly stale
+  }
+  await refreshNotifications();
+}
+
 async function renderMessages() {
   if (!state.selectedMemberHandle && state.members.length) {
     state.selectedMemberHandle = state.members[0].handle;
   }
+
+  const prevThreadEl = document.getElementById("threadMessages");
+  const wasAtBottom = isNearBottom(prevThreadEl);
+  const prevScrollTop = prevThreadEl ? prevThreadEl.scrollTop : 0;
+  const prevCount = state.threadMessageCount;
 
   content.innerHTML = `
     <div class="messages-layout">
@@ -399,7 +634,10 @@ async function renderMessages() {
         }
       </div>
       <div class="thread">
-        <div class="thread-messages" id="threadMessages"></div>
+        <div class="thread-messages-wrap">
+          <div class="thread-messages" id="threadMessages"></div>
+          <button class="jump-pill hidden" id="threadJumpBtn" type="button">&darr; New messages</button>
+        </div>
         <form class="composer" id="composer">
           <span class="composer-from">Owner →</span>
           <input type="text" id="composerText" placeholder="Type a reply…" autocomplete="off" />
@@ -417,13 +655,21 @@ async function renderMessages() {
   });
 
   const threadEl = document.getElementById("threadMessages");
+  const jumpBtn = document.getElementById("threadJumpBtn");
+  jumpBtn.addEventListener("click", () => {
+    threadEl.scrollTop = threadEl.scrollHeight;
+    jumpBtn.classList.add("hidden");
+  });
+
   if (state.selectedMemberHandle) {
     try {
       const messages = await api.listMessages(state.currentProjectId, state.selectedMemberHandle);
       threadEl.innerHTML = messages.length
         ? messages.map((m) => messageBubble(m, OWNER_HANDLE)).join("")
         : `<p class="empty small">No messages yet with ${escapeHtml(state.selectedMemberHandle)}.</p>`;
-      threadEl.scrollTop = threadEl.scrollHeight;
+      applyScrollBehavior(threadEl, wasAtBottom, prevScrollTop, messages.length > prevCount, "threadJumpBtn");
+      state.threadMessageCount = messages.length;
+      await markVisibleAsRead(messages);
     } catch (err) {
       threadEl.innerHTML = `<p class="empty small">Couldn't load messages: ${escapeHtml(String(err.message || err))}</p>`;
     }
@@ -447,9 +693,17 @@ async function renderMessages() {
 // whatever view is active on any "message" change over the existing SSE
 // stream, so no extra wiring is needed here for live updates.
 async function renderChatRoom() {
+  const prevFeedEl = document.getElementById("chatroomMessages");
+  const wasAtBottom = isNearBottom(prevFeedEl);
+  const prevScrollTop = prevFeedEl ? prevFeedEl.scrollTop : 0;
+  const prevCount = state.roomMessageCount;
+
   content.innerHTML = `
     <div class="chatroom-layout">
-      <div class="chatroom-messages" id="chatroomMessages"></div>
+      <div class="chatroom-messages-wrap">
+        <div class="chatroom-messages" id="chatroomMessages"></div>
+        <button class="jump-pill hidden" id="roomJumpBtn" type="button">&darr; New messages</button>
+      </div>
       <form class="composer" id="chatroomComposer">
         <span class="composer-from">Owner →</span>
         <select id="chatroomTo" aria-label="Send to"></select>
@@ -465,12 +719,20 @@ async function renderChatRoom() {
     .join("");
 
   const feedEl = document.getElementById("chatroomMessages");
+  const jumpBtn = document.getElementById("roomJumpBtn");
+  jumpBtn.addEventListener("click", () => {
+    feedEl.scrollTop = feedEl.scrollHeight;
+    jumpBtn.classList.add("hidden");
+  });
+
   try {
     const messages = await api.listMessages(state.currentProjectId);
     feedEl.innerHTML = messages.length
       ? messages.map((m) => roomBubble(m)).join("")
       : `<p class="empty small">No messages yet on this project.</p>`;
-    feedEl.scrollTop = feedEl.scrollHeight;
+    applyScrollBehavior(feedEl, wasAtBottom, prevScrollTop, messages.length > prevCount, "roomJumpBtn");
+    state.roomMessageCount = messages.length;
+    await markVisibleAsRead(messages);
   } catch (err) {
     feedEl.innerHTML = `<p class="empty small">Couldn't load messages: ${escapeHtml(String(err.message || err))}</p>`;
   }

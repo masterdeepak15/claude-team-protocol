@@ -173,6 +173,32 @@ export function buildApiRouter(): Router {
     res.json({ ...task, comments });
   });
 
+  // Dashboard-only mutation path (the Lead/developers still go through
+  // update_task_status / assign_task over MCP, which is what
+  // notify_assignment/report_status enforcement is built around). This is
+  // just the "move a card" / "reassign from the board" convenience for a
+  // human clicking around the UI directly.
+  router.patch("/tasks/:taskRef", (req, res) => {
+    const { status, assignee_handle } = req.body ?? {};
+    const VALID_STATUSES = ["backlog", "todo", "in_progress", "in_review", "done", "blocked"];
+    if (!status && !assignee_handle) {
+      res.status(400).json({ error: "status or assignee_handle is required" });
+      return;
+    }
+    if (status && !VALID_STATUSES.includes(status)) {
+      res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(", ")}` });
+      return;
+    }
+    const task = status
+      ? tasks.updateTaskStatus(req.params.taskRef, status, assignee_handle || undefined)
+      : tasks.assignTask(req.params.taskRef, assignee_handle);
+    if (!task) {
+      res.status(404).json({ error: `No task found for ${req.params.taskRef}` });
+      return;
+    }
+    res.json(task);
+  });
+
   // ?by=developer (default) or ?by=session, optional ?since=&until=&handle=
   router.get("/projects/:id/usage", (req, res) => {
     const { since, until, handle, by } = req.query;
@@ -187,6 +213,24 @@ export function buildApiRouter(): Router {
   router.get("/projects/:id/messages", (req, res) => {
     const handle = typeof req.query.handle === "string" ? req.query.handle : undefined;
     res.json(messaging.listMessages(req.params.id, handle));
+  });
+
+  // Notification bell. Scoped server-side to Owner's own inbox — see
+  // messaging.unreadForOwner for why this can't be a general unread API.
+  router.get("/projects/:id/messages/unread", (req, res) => {
+    res.json(messaging.unreadForOwner(req.params.id));
+  });
+
+  // Called only once the dashboard has actually rendered a thread/feed the
+  // human is looking at — not when the notification badge merely appears.
+  router.post("/projects/:id/messages/mark-read", (req, res) => {
+    const { ids } = req.body ?? {};
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+      res.status(400).json({ error: "ids must be an array of strings" });
+      return;
+    }
+    const changed = messaging.markOwnerMessagesRead(req.params.id, ids);
+    res.json({ ok: true, changed });
   });
 
   router.post("/messages", (req, res) => {

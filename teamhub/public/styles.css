@@ -191,6 +191,110 @@ body {
   color: var(--text-muted);
 }
 
+/* ---------- Theme toggle + notification bell ---------- */
+
+.icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  position: relative;
+}
+
+.icon-btn:hover {
+  background: var(--bg-elevated-2);
+  border-color: var(--border);
+}
+
+.notif-wrap {
+  position: relative;
+}
+
+.notif-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.notif-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  max-height: 380px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  z-index: 50;
+}
+
+.notif-dropdown-header {
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.notif-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.notif-item:last-child {
+  border-bottom: none;
+}
+
+.notif-item:hover {
+  background: var(--bg-elevated-2);
+}
+
+.notif-from {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.notif-text {
+  font-size: 0.82rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notif-time {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
 /* ---------- Content ---------- */
 
 .content {
@@ -484,6 +588,50 @@ button:hover {
   flex-wrap: wrap;
 }
 
+.task-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.task-actions select {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.72rem;
+  padding: 4px 6px;
+}
+
+/* ---------- Board toolbar (filters) ---------- */
+
+.board-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.board-toolbar input[type="text"] {
+  flex: 1 1 220px;
+  min-width: 160px;
+}
+
+.board-toolbar select {
+  flex: 0 0 auto;
+}
+
+.board-toolbar .btn-link:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.board-toolbar-count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* ---------- Team cards ---------- */
 
 .card-grid {
@@ -607,6 +755,41 @@ button:hover {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.thread-messages-wrap,
+.chatroom-messages-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-messages-wrap .thread-messages,
+.chatroom-messages-wrap .chatroom-messages {
+  flex: 1;
+}
+
+.jump-pill {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  z-index: 5;
+}
+
+.jump-pill.hidden {
+  display: none;
 }
 
 .bubble {
@@ -871,3 +1054,34 @@ button:hover {
   color: var(--text);
   border-color: var(--text-muted);
 }
+
+/* ---------- Toast (task quick-action feedback) ---------- */
+
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 18px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 100;
+}
+
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+#toast.toast-error {
+  border-color: var(--red);
+  color: var(--red);
+}
+

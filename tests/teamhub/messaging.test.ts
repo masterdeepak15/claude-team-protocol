@@ -164,3 +164,37 @@ describe("task_ref must reference a real task", () => {
     ).toThrow(/no task/i);
   });
 });
+
+describe("owner unread tracking", () => {
+  it("unreadForOwner only returns unread messages addressed to owner, not to agents", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { sendMessage, unreadForOwner } = await import("../../teamhub/messaging.js");
+    createProject("proj-msg-owner-a", "Owner Unread Project A", "POA");
+    sendMessage("proj-msg-owner-a", "dev-A", "owner", "hey owner, question");
+    sendMessage("proj-msg-owner-a", "owner", "dev-A", "hey dev-A, an instruction");
+
+    const unread = unreadForOwner("proj-msg-owner-a");
+    expect(unread).toHaveLength(1);
+    expect(unread[0].to_handle).toBe("owner");
+    expect(unread[0].text).toBe("hey owner, question");
+  });
+
+  it("markOwnerMessagesRead only flips rows addressed to owner, ignoring any other ids passed", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { sendMessage, unreadForOwner, listMessages } = await import("../../teamhub/messaging.js");
+    createProject("proj-msg-owner-b", "Owner Unread Project B", "POB");
+    const toOwner = sendMessage("proj-msg-owner-b", "dev-B", "owner", "for owner");
+    const toAgent = sendMessage("proj-msg-owner-b", "owner", "dev-B", "for dev-B");
+
+    const { markOwnerMessagesRead } = await import("../../teamhub/messaging.js");
+    const changed = markOwnerMessagesRead("proj-msg-owner-b", [toOwner.id, toAgent.id]);
+
+    // Only the row actually addressed to owner should have flipped —
+    // passing an agent-addressed id must be a no-op for it, since that
+    // row's read=0 state is load-bearing for the agent's own checkInbox.
+    expect(changed).toBe(1);
+    expect(unreadForOwner("proj-msg-owner-b")).toHaveLength(0);
+    const agentRow = listMessages("proj-msg-owner-b").find((m) => m.id === toAgent.id);
+    expect(agentRow?.read).toBe(false);
+  });
+});
