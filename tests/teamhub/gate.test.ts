@@ -23,16 +23,54 @@ describe("gate module", () => {
     expect(hasUnreadMessages("dev-gate-b")).toBe(true);
   });
 
-  it("hasReadyUnassignedWork is false when backlog is empty or fully assigned", async () => {
+  it("hasReadyUnassignedWork ignores backlog-status tasks — backlog means not-yet-ready, not urgent", async () => {
     const { createProject } = await import("../../teamhub/projects.js");
-    const { createTask, assignTask } = await import("../../teamhub/tasks.js");
+    const { createTask } = await import("../../teamhub/tasks.js");
+    const { registerMember } = await import("../../teamhub/members.js");
     const { hasReadyUnassignedWork } = await import("../../teamhub/gate.js");
     createProject("proj-gate-c", "Gate Project C", "PGC");
+    registerMember("dev-gate-c", "proj-gate-c", "developer");
+    // createTask defaults to status "backlog" — every new task starts
+    // here. This must NOT count as "ready", even with an idle developer
+    // sitting right there, or this gate is true almost permanently for
+    // any project with a normal backlog.
+    createTask("proj-gate-c", "Fix the bug");
     expect(hasReadyUnassignedWork("proj-gate-c")).toBe(false);
-    const task = createTask("proj-gate-c", "Fix the bug");
-    expect(hasReadyUnassignedWork("proj-gate-c")).toBe(true);
-    assignTask(task.task_ref, "dev-gate-c");
-    expect(hasReadyUnassignedWork("proj-gate-c")).toBe(false);
+  });
+
+  it("hasReadyUnassignedWork is true for an unassigned todo task with an idle developer available", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask, updateTaskStatus, assignTask } = await import("../../teamhub/tasks.js");
+    const { registerMember } = await import("../../teamhub/members.js");
+    const { hasReadyUnassignedWork } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-c2", "Gate Project C2", "PGC2");
+    registerMember("dev-gate-c2", "proj-gate-c2", "developer");
+    const task = createTask("proj-gate-c2", "Fix the bug");
+    updateTaskStatus(task.task_ref, "todo");
+    expect(hasReadyUnassignedWork("proj-gate-c2")).toBe(true);
+    assignTask(task.task_ref, "dev-gate-c2");
+    expect(hasReadyUnassignedWork("proj-gate-c2")).toBe(false);
+  });
+
+  it("regression: an unassigned todo task does NOT re-trigger the gate when every developer/tester is already busy", async () => {
+    // This is the exact scenario that racked up 17 cycles / ~9M
+    // cache-read tokens on a single idle master session in production:
+    // one unassigned task sitting around while every developer already
+    // has active work — the master correctly has nothing to do, but the
+    // old gate fired every single long-poll reconnect regardless.
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { createTask, updateTaskStatus, assignTask } = await import("../../teamhub/tasks.js");
+    const { registerMember } = await import("../../teamhub/members.js");
+    const { hasReadyUnassignedWork, hasPendingWork } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-c3", "Gate Project C3", "PGC3");
+    registerMember("dev-gate-c3", "proj-gate-c3", "developer");
+    const busy = createTask("proj-gate-c3", "Already assigned, in progress");
+    assignTask(busy.task_ref, "dev-gate-c3");
+    updateTaskStatus(busy.task_ref, "in_progress");
+    const ready = createTask("proj-gate-c3", "Nobody free to take this yet");
+    updateTaskStatus(ready.task_ref, "todo");
+    expect(hasReadyUnassignedWork("proj-gate-c3")).toBe(false);
+    expect(hasPendingWork("master", "master-gate-c3", "proj-gate-c3")).toBe(false);
   });
 
   it("hasPendingWork ignores unassigned backlog for developer/tester roles", async () => {
@@ -42,7 +80,10 @@ describe("gate module", () => {
     createProject("proj-gate-d", "Gate Project D", "PGD");
     createTask("proj-gate-d", "Unassigned task");
     expect(hasPendingWork("developer", "dev-gate-d", "proj-gate-d")).toBe(false);
-    expect(hasPendingWork("master", "master-gate-d", "proj-gate-d")).toBe(true);
+    // No developer/tester registered on this project at all, so even
+    // though the task itself is unassigned, there's no one it could be
+    // assigned to — master correctly has nothing to do either.
+    expect(hasPendingWork("master", "master-gate-d", "proj-gate-d")).toBe(false);
   });
 
   it("hasPendingWork is true for any role once a message is unread", async () => {

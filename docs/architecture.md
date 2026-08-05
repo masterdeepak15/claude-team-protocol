@@ -182,8 +182,19 @@ The request itself is answered server-side the moment `has_pending_work`
 value, capped at 55s) — whichever comes first. Either way, **no `claude`
 process is spawned and no tokens are spent** just to check:
 
-- Master: pending if there's any unread message, **or** any backlog/todo
-  task with no assignee yet.
+- Master: pending if there's any unread message, **or** an unassigned
+  `todo` (ready-to-work) task exists **and** at least one developer/tester
+  currently has no active task to give it to. `backlog` status doesn't
+  count — it's every task's default at creation and just means
+  "not groomed yet", not "needs the master's attention right now"; and an
+  unassigned `todo` task with everyone already busy doesn't count either,
+  since there's genuinely nothing the master could do about it yet. (A
+  real session hit exactly this: 17 cycles / ~9M cache-read tokens for a
+  master that correctly had nothing to assign every single time, because
+  one leftover unassigned task kept the old, looser check permanently
+  true. When a developer frees up, report_status/notify_assignment already
+  puts an unread message in the master's inbox anyway, so the master still
+  gets woken up right when it actually matters.)
 - Developer/Tester/Analyst: pending if there's any unread message, **or**
   (Developer/Tester only) any task already assigned to that handle whose
   status isn't `done`/`blocked`.

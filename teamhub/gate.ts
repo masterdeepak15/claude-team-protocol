@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
 import { listTasks } from "./tasks.js";
+import { listTeam } from "./members.js";
 import type { Role } from "./members.js";
 
 // Pure DB reads only — no Claude call, no tokens spent. Called directly over
@@ -18,10 +19,30 @@ export function hasUnreadMessages(handle: string): boolean {
 // Only meaningful for the master role — developers/testers never need to
 // look at unassigned backlog themselves, they only ever act on what's
 // assigned to their own handle.
+//
+// Two things matter here, both learned the hard way from a real session
+// that racked up 17 cycles / ~9M cache-read tokens with nothing to show
+// for it, purely from this gate firing on every single long-poll
+// reconnect:
+//
+//   1. Only `todo` counts as "ready". `backlog` is every task's default
+//      status at creation (see tasks.ts) and explicitly means "not yet
+//      groomed/ready" — a normal project almost always has *something*
+//      sitting in backlog, so counting it here meant this gate was true
+//      almost permanently, not just when something actually needed the
+//      master's attention.
+//   2. Even a genuinely ready `todo` task shouldn't count as "pending" if
+//      nobody has capacity to take it — this exactly mirrors the
+//      condition the master's own cyclePrompt already uses ("if a
+//      developer or tester has no active task and there is ready work for
+//      them, assign it"). Without this, an unassigned todo task with both
+//      developers already busy would re-trigger a full paid cycle on
+//      every reconnect forever, even though the master's own judgment —
+//      correctly — is "nothing to assign, everyone's occupied".
 export function hasReadyUnassignedWork(project_id: string): boolean {
-  const backlog = listTasks(project_id, { status: "backlog" });
-  const todo = listTasks(project_id, { status: "todo" });
-  return [...backlog, ...todo].some((t) => !t.assignee_handle);
+  const ready = listTasks(project_id, { status: "todo" }).some((t) => !t.assignee_handle);
+  if (!ready) return false;
+  return listTeam(project_id).some((m) => (m.role === "developer" || m.role === "tester") && !hasOwnActiveWork(m.handle));
 }
 
 // The other half of "does this handle have work to do": a task already
