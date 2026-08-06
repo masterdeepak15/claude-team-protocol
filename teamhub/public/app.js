@@ -30,7 +30,7 @@ const state = {
   eventsUnsub: null,
   usageBy: "developer", // "developer" | "session" — sticky across re-renders of the Usage view
   unreadMessages: [], // messages addressed to owner, read = 0 — powers the notification bell
-  boardFilters: { assignee: "", priority: "", search: "" },
+  boardFilters: { sprint: "", assignee: "", priority: "", search: "" },
   threadMessageCount: 0, // last-rendered count for the open 1:1 thread, to detect "new while scrolled up"
   roomMessageCount: 0, // same, for the chat room feed
 };
@@ -352,6 +352,13 @@ function renderBoard() {
   content.innerHTML = `
     <div class="board-toolbar">
       <input type="text" id="boardSearch" placeholder="Search by ref or title…" value="${escapeHtml(f.search)}" />
+      <select id="boardSprintFilter">
+        <option value="">All sprints</option>
+        <option value="__none__" ${f.sprint === "__none__" ? "selected" : ""}>No sprint</option>
+        ${state.sprints
+          .map((s) => `<option value="${s.id}" ${String(f.sprint) === String(s.id) ? "selected" : ""}>${escapeHtml(s.name)}</option>`)
+          .join("")}
+      </select>
       <select id="boardAssigneeFilter">
         <option value="">All assignees</option>
         <option value="__unassigned__" ${f.assignee === "__unassigned__" ? "selected" : ""}>Unassigned</option>
@@ -365,7 +372,7 @@ function renderBoard() {
           .map((p) => `<option value="${p}" ${f.priority === p ? "selected" : ""}>${p[0].toUpperCase()}${p.slice(1)}</option>`)
           .join("")}
       </select>
-      <button type="button" class="btn-link" id="boardClearFilters" ${f.assignee || f.priority || f.search ? "" : "disabled"}>Clear filters</button>
+      <button type="button" class="btn-link" id="boardClearFilters" ${f.sprint || f.assignee || f.priority || f.search ? "" : "disabled"}>Clear filters</button>
       <span class="board-toolbar-count" id="boardToolbarCount"></span>
     </div>
     <div class="board" id="boardColumns"></div>
@@ -374,6 +381,10 @@ function renderBoard() {
   document.getElementById("boardSearch").addEventListener("input", (e) => {
     state.boardFilters.search = e.target.value;
     renderBoardColumns(); // not a full renderBoard() — would drop input focus mid-keystroke
+  });
+  document.getElementById("boardSprintFilter").addEventListener("change", (e) => {
+    state.boardFilters.sprint = e.target.value;
+    renderBoard();
   });
   document.getElementById("boardAssigneeFilter").addEventListener("change", (e) => {
     state.boardFilters.assignee = e.target.value;
@@ -384,17 +395,24 @@ function renderBoard() {
     renderBoard();
   });
   document.getElementById("boardClearFilters").addEventListener("click", () => {
-    state.boardFilters = { assignee: "", priority: "", search: "" };
+    state.boardFilters = { sprint: "", assignee: "", priority: "", search: "" };
     renderBoard();
   });
 
   renderBoardColumns();
 }
 
+function sprintNameFor(sprintId) {
+  if (sprintId === null || sprintId === undefined) return null;
+  return state.sprints.find((s) => s.id === sprintId)?.name ?? `Sprint #${sprintId}`;
+}
+
 function filteredBoardTasks() {
   const f = state.boardFilters;
   const needle = f.search.trim().toLowerCase();
   return state.tasks.filter((t) => {
+    if (f.sprint === "__none__" && (t.sprint_id !== null && t.sprint_id !== undefined)) return false;
+    if (f.sprint && f.sprint !== "__none__" && String(t.sprint_id) !== String(f.sprint)) return false;
     if (f.assignee === "__unassigned__" && t.assignee_handle) return false;
     if (f.assignee && f.assignee !== "__unassigned__" && t.assignee_handle !== f.assignee) return false;
     if (f.priority && t.priority !== f.priority) return false;
@@ -424,12 +442,18 @@ function renderBoardColumns() {
 }
 
 function taskCard(t) {
+  const sprintName = sprintNameFor(t.sprint_id);
   return `
     <div class="task-card">
       <div class="task-ref">${escapeHtml(t.task_ref)}</div>
       <div class="task-title">${escapeHtml(t.title)}</div>
       <div class="task-meta">
         <span class="badge priority-${escapeHtml(t.priority)}">${escapeHtml(t.priority)}</span>
+        ${
+          sprintName
+            ? `<span class="badge sprint-badge">${escapeHtml(sprintName)}</span>`
+            : `<span class="badge sprint-badge sprint-badge-none" title="Not assigned to any sprint">No sprint</span>`
+        }
       </div>
       <div class="task-actions">
         <select class="task-status-select" data-task-ref="${escapeHtml(t.task_ref)}" aria-label="Change status for ${escapeHtml(t.task_ref)}">

@@ -513,6 +513,14 @@ button:hover {
   color: var(--green);
   border-color: var(--green);
 }
+.badge.sprint-badge {
+  color: var(--text-muted);
+}
+.badge.sprint-badge-none {
+  color: var(--yellow);
+  border-color: var(--yellow);
+  font-style: italic;
+}
 
 /* ---------- Board (Kanban) ---------- */
 
