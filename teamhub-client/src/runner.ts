@@ -118,54 +118,56 @@ export function kickoffPrompt(args: RunnerArgs): string {
   return `You are a Developer on project "${args.project}". Your handle is "${args.handle}" (role="developer", mode="${args.mode}"), your Team Lead's handle is "${args.masterHandle}" — you're already registered with TeamHub, no action needed for that. Check your inbox for an assigned task.`;
 }
 
+// The old instruction here was "reply to EVERY unread message, even a
+// short one, never leave one read-but-unanswered." That's exactly what
+// built an unbounded ack loop in production — see agents/runner.ts (the
+// server package's copy) for the full incident writeup.
+const NO_ACK_LOOPS =
+  `Only send a reply (send_message or report_status) if it adds something new — a new task, an ` +
+  `answer to a question, a blocker, or your status materially changing since you last reported it. ` +
+  `This applies to messages from "owner" (the human) too — answer real questions from them, just ` +
+  `don't get pulled into back-and-forth pleasantries. If a message is just confirming something ` +
+  `you already said ("Ack", "Confirmed, thanks", "Sounds good", "Understood") do NOT reply to it — ` +
+  `that exchange should end with the first acknowledgment, not continue back and forth. And don't ` +
+  `send both a report_status AND a send_message for the same single update; pick one. If nothing in ` +
+  `your inbox needs a response and you have no task to work, send nothing this cycle.`;
+
 export function cyclePrompt(args: RunnerArgs): string {
   if (args.role === "master") {
     return (
-      `Check your teamhub inbox (handle="${args.handle}"). For EVERY unread message you find — ` +
-      `from a developer, a tester, or from "owner" (the human operator) — you MUST send a reply ` +
-      `back to that exact sender with send_message before you finish this turn, even if the reply ` +
-      `is short (e.g. "Reviewed BTS-4, looks good" or "Checked with dev-A, still in progress"). ` +
-      `Never leave a message read-but-unanswered. Reflect any status updates in your task tracker. ` +
-      `If a developer or tester has no active task and there is ready work for them, assign it ` +
-      `with assign_task and notify_assignment.`
+      `Check your teamhub inbox (handle="${args.handle}"). ${NO_ACK_LOOPS} ` +
+      `Reflect any real status updates in your task tracker. If a developer or tester has no ` +
+      `active task and there is ready work for them, assign it with assign_task and notify_assignment.`
     );
   }
   if (args.role === "tester") {
     return (
-      `Check your teamhub inbox (handle="${args.handle}"). For EVERY unread message — a new test ` +
-      `task, a question, or anything from "owner" (the human operator) — you MUST reply to that ` +
-      `exact sender with send_message or report_status before finishing this turn, confirming what ` +
-      `you did or your current status. Never leave a message read-but-unanswered. If you have a new ` +
-      `test task, pull the full details from your task tracker, run or write the tests, and file any ` +
-      `bugs you find as comments or new tasks. Update the task status as you go, and call ` +
-      `report_status with your test results so "${args.masterHandle}" is notified. If you're stuck, ` +
-      `send_message to "${args.masterHandle}" and check back next cycle for a reply.`
+      `Check your teamhub inbox (handle="${args.handle}"). ${NO_ACK_LOOPS} If you have a new test ` +
+      `task, pull the full details from your task tracker, run or write the tests, and file any bugs ` +
+      `you find as comments or new tasks. Update the task status as you go, and call report_status ` +
+      `(once — don't also send_message the same update) with your test results so ` +
+      `"${args.masterHandle}" is notified. If you're stuck, send_message to "${args.masterHandle}" ` +
+      `describing the blocker and check back next cycle for a reply.`
     );
   }
   if (args.role === "analyst") {
     return (
-      `Check your teamhub inbox (handle="${args.handle}"). For EVERY unread message — a research ` +
-      `or clarification request, a question, or anything from "owner" (the human operator) — you ` +
-      `MUST reply to that exact sender with send_message before finishing this turn, even a short ` +
-      `acknowledgment. Never leave a message read-but-unanswered. When asked to clarify requirements, ` +
-      `don't guess or invent details — read the relevant tasks/comments, do any research needed ` +
-      `(WebSearch/WebFetch), and give a clear, specific answer or a short list of open questions back ` +
-      `to whoever asked, especially "${args.masterHandle}". When reviewing outcomes, look across ` +
-      `multiple related tasks (list_tasks) for patterns — e.g. several bugs sharing a root cause — ` +
-      `rather than one task in isolation, and add_comment with what you found. You don't write or ` +
-      `edit code; if something needs a code fix, say so in your reply instead of attempting it.`
+      `Check your teamhub inbox (handle="${args.handle}"). ${NO_ACK_LOOPS} When asked to clarify ` +
+      `requirements, don't guess or invent details — read the relevant tasks/comments, do any ` +
+      `research needed (WebSearch/WebFetch), and give a clear, specific answer or a short list of ` +
+      `open questions back to whoever asked, especially "${args.masterHandle}". When reviewing ` +
+      `outcomes, look across multiple related tasks (list_tasks) for patterns — e.g. several bugs ` +
+      `sharing a root cause — rather than one task in isolation, and add_comment with what you found. ` +
+      `You don't write or edit code; if something needs a code fix, say so in your reply instead of ` +
+      `attempting it.`
     );
   }
   return (
-    `Check your teamhub inbox (handle="${args.handle}"). For EVERY unread message — a new task ` +
-    `assignment, a question, or anything from "owner" (the human operator) — you MUST reply to ` +
-    `that exact sender with send_message or report_status before finishing this turn, confirming ` +
-    `what you did or your current status (done, in progress, blocked, etc). Never leave a message ` +
-    `read-but-unanswered — reading it without replying looks identical to ignoring it entirely. If ` +
-    `you have a new task assignment, pull the full details from your task tracker, work the code, ` +
-    `and push to GitHub. Update the task status as you go, and call report_status so ` +
-    `"${args.masterHandle}" is notified. If you're stuck, send_message to "${args.masterHandle}" ` +
-    `and check back next cycle for a reply.`
+    `Check your teamhub inbox (handle="${args.handle}"). ${NO_ACK_LOOPS} If you have a new task ` +
+    `assignment, pull the full details from your task tracker, work the code, and push to GitHub. ` +
+    `Update the task status as you go, and call report_status (once — don't also send_message the ` +
+    `same update) so "${args.masterHandle}" is notified. If you're stuck, send_message to ` +
+    `"${args.masterHandle}" describing the blocker and check back next cycle for a reply.`
   );
 }
 

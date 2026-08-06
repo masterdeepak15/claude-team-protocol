@@ -137,3 +137,76 @@ describe("hasPendingWork considers a developer's own in-progress task, not just 
     expect(hasPendingWork("developer", "dev-gate-h", "proj-gate-h")).toBe(true);
   });
 });
+
+describe("a blocked, idle handle isn't woken by ack-only chatter", () => {
+  it("hasUnreadMessages is false for a blocked-and-idle handle when the only unread message is a plain 'message'", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, setMemberStatus } = await import("../../teamhub/members.js");
+    const { sendMessage } = await import("../../teamhub/messaging.js");
+    const { hasUnreadMessages } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-i", "Gate Project I", "PGI");
+    registerMember("dev-gate-i", "proj-gate-i", "developer");
+    setMemberStatus("dev-gate-i", "blocked");
+    // This is the exact production scenario: an ack-only reply arrives
+    // while the recipient is blocked and has nothing to work — it must
+    // not be enough to spawn a new paid cycle on its own.
+    sendMessage("proj-gate-i", "master-1", "dev-gate-i", "Confirmed, thanks.");
+    expect(hasUnreadMessages("dev-gate-i")).toBe(false);
+  });
+
+  it("hasUnreadMessages is still true for a blocked-and-idle handle when a real task_assignment arrives", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, setMemberStatus } = await import("../../teamhub/members.js");
+    const { createTask } = await import("../../teamhub/tasks.js");
+    const { notifyAssignment } = await import("../../teamhub/messaging.js");
+    const { hasUnreadMessages } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-j", "Gate Project J", "PGJ");
+    registerMember("dev-gate-j", "proj-gate-j", "developer");
+    setMemberStatus("dev-gate-j", "blocked");
+    const task = createTask("proj-gate-j", "New work while previously blocked");
+    notifyAssignment("proj-gate-j", "master-1", "dev-gate-j", task.task_ref, "pick this up");
+    expect(hasUnreadMessages("dev-gate-j")).toBe(true);
+  });
+
+  it("hasUnreadMessages is still true for a blocked-and-idle handle when an interrupt arrives", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, setMemberStatus } = await import("../../teamhub/members.js");
+    const { db } = await import("../../teamhub/db.js");
+    const { hasUnreadMessages } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-k", "Gate Project K", "PGK");
+    registerMember("dev-gate-k", "proj-gate-k", "developer");
+    setMemberStatus("dev-gate-k", "blocked");
+    db.prepare(
+      `INSERT INTO messages (id, project_id, from_handle, to_handle, text, type, ts, read)
+       VALUES ('m-interrupt-1', 'proj-gate-k', 'master-1', 'dev-gate-k', 'redirect', 'interrupt', datetime('now'), 0)`
+    ).run();
+    expect(hasUnreadMessages("dev-gate-k")).toBe(true);
+  });
+
+  it("a blocked handle WITH an active task still wakes for ordinary messages (the gate only relaxes when idle too)", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember, setMemberStatus } = await import("../../teamhub/members.js");
+    const { createTask, assignTask, updateTaskStatus } = await import("../../teamhub/tasks.js");
+    const { sendMessage } = await import("../../teamhub/messaging.js");
+    const { hasUnreadMessages } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-l", "Gate Project L", "PGL");
+    registerMember("dev-gate-l", "proj-gate-l", "developer");
+    setMemberStatus("dev-gate-l", "blocked");
+    const task = createTask("proj-gate-l", "Still has an active task");
+    assignTask(task.task_ref, "dev-gate-l");
+    updateTaskStatus(task.task_ref, "in_progress");
+    sendMessage("proj-gate-l", "master-1", "dev-gate-l", "any note");
+    expect(hasUnreadMessages("dev-gate-l")).toBe(true);
+  });
+
+  it("a non-blocked handle wakes for ordinary messages as before (no behavior change for the common case)", async () => {
+    const { createProject } = await import("../../teamhub/projects.js");
+    const { registerMember } = await import("../../teamhub/members.js");
+    const { sendMessage } = await import("../../teamhub/messaging.js");
+    const { hasUnreadMessages } = await import("../../teamhub/gate.js");
+    createProject("proj-gate-m", "Gate Project M", "PGM");
+    registerMember("dev-gate-m", "proj-gate-m", "developer");
+    sendMessage("proj-gate-m", "master-1", "dev-gate-m", "any note");
+    expect(hasUnreadMessages("dev-gate-m")).toBe(true);
+  });
+});

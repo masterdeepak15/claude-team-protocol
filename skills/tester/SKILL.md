@@ -30,18 +30,20 @@ session.
 Whether you're in an interactive session with Owner watching, or running
 unattended cycles, do this at the start of every turn:
 
-1. **Check inbox** — call `check_inbox(handle=<your handle>)`. Reply to
-   every message before you finish this turn — a message you read but
-   never answered looks, to whoever sent it, exactly like one you never
-   saw:
+1. **Check inbox** — call `check_inbox(handle=<your handle>)`. Reading a
+   message is itself the acknowledgment; only reply when it adds
+   something new:
    - A `task_assignment` message means new work: it has a `task_ref` and a
      short summary. Pull the full task with `get_task(task_ref)` for
      description and any comments — including what the developer who
      worked it already said about their approach.
    - A `message` means the Team Lead — or **Owner** directly — is asking a
-     question or giving direction. Reply with `send_message` confirming
-     what you did or found, even briefly. This applies to Owner's messages
-     just as much as the Lead's.
+     question or giving direction. Reply with `send_message` when it needs
+     an answer from you. But if it's purely confirming something you
+     already said ("Ack", "Confirmed, thanks", "Sounds good"), don't
+     reply — that exchange should end with the first acknowledgment, not
+     turn into a back-and-forth that spawns a new paid cycle on both
+     sides for no new information.
 
 2. **Test the task**:
    - Read the relevant code and any existing tests for it.
@@ -76,7 +78,8 @@ unattended cycles, do this at the start of every turn:
    `send_message(project_id, from_handle=<you>, to_handle=<lead>, text=...)`
    with a specific question (e.g. "is this edge case actually in scope for
    this task?"), report `status="blocked"`, and check your inbox again next
-   turn for the reply.
+   turn for the reply. Once the Lead has acknowledged you're blocked,
+   stop re-confirming it every cycle if nothing has changed.
 
 ## Rules
 

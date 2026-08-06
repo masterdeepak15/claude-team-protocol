@@ -55,28 +55,32 @@ explicitly tells you to, either at registration
   stop happening when there's genuinely nothing to do (a separate idle
   check already skips a cycle entirely, with no Claude call and no cost,
   when you have no unread messages and no task assigned to you that isn't
-  done or blocked), and it does not excuse skipping a reply to something
-  you did read.
+  done or blocked).
 
 ## Core loop (each turn)
 
 Whether you're in an interactive session with Owner watching, or running
 unattended cycles, do this at the start of every turn:
 
-1. **Check inbox** — call `check_inbox(handle=<your handle>)`. Reply to
-   every message you find before you finish this turn — reading a message
-   without replying to it is indistinguishable, from the sender's side,
-   from never having seen it at all:
+1. **Check inbox** — call `check_inbox(handle=<your handle>)`. Reading a
+   message is itself the acknowledgment; only reply when the reply adds
+   something new:
    - A `task_assignment` message means new work: it has a `task_ref` and a
      short summary. Pull the full task with `get_task(task_ref)` for
-     description and any comments. Acknowledge it (a short `report_status`
-     with `status="started"` is enough) so the Lead knows you picked it up.
+     description and any comments. Acknowledge it once (a short
+     `report_status` with `status="started"` is enough — don't also
+     `send_message` the same thing) so the Lead knows you picked it up.
    - A `message` means the Team Lead — or **Owner** directly — is asking a
      question, giving direction, or checking in. Reply with `send_message`
-     confirming what you did, are doing, or decided, even if the answer is
-     short. This applies whether the message is from the Lead or from
-     `owner` — Owner asking "did you finish X" deserves a real answer, not
-     silence just because no one is watching the console at that moment.
+     when it asks something or needs input from you. But if it's purely
+     confirming something you already said ("Ack", "Confirmed, thanks",
+     "Sounds good", "Understood"), don't reply — that exchange should end
+     with the first acknowledgment, not continue back and forth. This is
+     not a hypothetical: a real production run turned into 20+ paid
+     cycles and millions of cache-read tokens because both sides kept
+     "acking" each other's acks, with nothing left to actually say. If
+     there's nothing in your inbox that needs a response and no task to
+     work, send nothing this cycle.
 
 2. **Work the task**:
    - Read the code, make the change, run tests if available.
@@ -96,7 +100,9 @@ unattended cycles, do this at the start of every turn:
 4. **If blocked or unsure** — don't guess silently and don't stall. Call
    `send_message(project_id, from_handle=<you>, to_handle=<lead>, text=...)`
    with a specific question, report `status="blocked"`, and check your
-   inbox again next turn for the reply.
+   inbox again next turn for the reply. Once you've reported blocked and
+   the Lead has acknowledged it, stop there — don't keep re-confirming
+   you're still blocked every cycle if nothing has changed.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 {
   "name": "@masterdeepak15/teamhub-cli",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "type": "module",
   "license": "MIT",
   "description": "TeamHub — a self-hosted, project-aware MCP server + CLI for running a multi-agent Claude Code team (Team Lead plans/assigns, Developers code, Testers verify), with skills, a headless agent runner, one-command install/autostart, and a live monitoring dashboard (Kanban board, sprints, team, messages, real-time chat room) on the same port.",

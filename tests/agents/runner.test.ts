@@ -167,7 +167,7 @@ describe("prompts", () => {
     expect(prompt).toContain('role="master"');
   });
 
-  it("cyclePrompt for developer references the master handle", () => {
+  it("cyclePrompt for developer explains when a reply is (and isn't) warranted", () => {
     const prompt = cyclePrompt({
       role: "developer",
       project: "proj-x",
@@ -179,18 +179,24 @@ describe("prompts", () => {
     });
     expect(prompt).toContain("master-1");
     expect(prompt).toContain("dev-A");
-    expect(prompt).toMatch(/MUST reply/);
+    expect(prompt).toMatch(/only.*reply/i);
   });
 
-  it("cyclePrompt requires replying to every message sender, including owner, for all three roles", () => {
+  it("cyclePrompt discourages ack-only reply loops for all roles, without dropping owner questions", () => {
     const base = { project: "proj-x", cycle: 30, mode: "manual" as const, watchdogInterval: 5 };
     const master = cyclePrompt({ ...base, role: "master", handle: "master-1", cycle: 60 });
     const developer = cyclePrompt({ ...base, role: "developer", handle: "dev-A", masterHandle: "master-1" });
     const tester = cyclePrompt({ ...base, role: "tester", handle: "tester-1", masterHandle: "master-1" });
     for (const prompt of [master, developer, tester]) {
-      expect(prompt).toMatch(/MUST/);
+      // The exact bug this guards against: an unbounded "Ack" / "Confirmed,
+      // thanks" / "Sounds good" chain, each reply itself triggering another
+      // paid cycle on the other side. The old wording ("MUST reply to
+      // EVERY unread message... never leave read-but-unanswered") is
+      // exactly what caused it and must not come back.
+      expect(prompt).not.toMatch(/MUST reply to EVERY/i);
+      expect(prompt).not.toMatch(/read-but-unanswered/i);
+      expect(prompt).toMatch(/do not reply|don't reply|not reply to it/i);
       expect(prompt).toMatch(/owner/i);
-      expect(prompt).toMatch(/read-but-unanswered|before (you finish|finishing) this turn/i);
     }
   });
 

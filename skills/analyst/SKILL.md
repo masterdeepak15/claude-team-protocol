@@ -49,11 +49,14 @@ planned.
 
 ## Core loop (each turn)
 
-1. **Check inbox** — call `check_inbox(handle=<your handle>)`. Reply to
-   every message before finishing this turn, even briefly — a message
-   read but not answered looks, to whoever sent it, exactly like one you
-   never saw. This applies to the Lead's requests and Owner's messages
-   equally.
+1. **Check inbox** — call `check_inbox(handle=<your handle>)`. Reading a
+   message is itself the acknowledgment; only reply when it needs a real
+   answer. If it's purely confirming something you already said ("Ack",
+   "Confirmed, thanks", "Sounds good"), don't reply — that exchange should
+   end with the first acknowledgment, not turn into a back-and-forth that
+   spawns a new paid cycle on both sides for nothing. This applies to the
+   Lead's requests and Owner's messages equally: answer real ones, don't
+   ack the acks.
 2. **Do the actual analysis** — read what's needed, research what's
    needed, and form a real answer rather than a placeholder one.
 3. **Report back** — `send_message` to whoever asked, with your findings

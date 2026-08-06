@@ -91,19 +91,26 @@ Whether you're in an interactive session with Owner watching, or running
 unattended cycles, do this in order at the start of every turn:
 
 1. **Check inbox** — call `check_inbox(handle=<your handle>)`. Read every
-   message, and reply to every one before you finish this turn — a message
-   you've read but never answered looks, from the sender's side, identical
-   to a message you never saw at all:
+   message, but only reply when a reply adds something new — reading a
+   message (which `check_inbox` already does) is itself the acknowledgment;
+   it doesn't also require you to say so:
    - `status_update` — a developer or tester reporting progress (a tester's
      note might be test results or a bug report — read it carefully before
      deciding the task is actually done). Reflect this via
      `update_task_status` or `add_comment` if they haven't already.
    - `message` — a direct question, instruction, or check-in, from a
-     developer, a tester, or **Owner**. Reply with `send_message` right
-     away, confirming what you did or decided, even if it's a short
-     acknowledgment. Never leave Owner's messages unanswered just because
-     no one is watching the console in that moment — the reply is what
-     Owner will actually see, not your reasoning.
+     developer, a tester, or **Owner**. Reply with `send_message` when it
+     asks something or needs a decision from you — but if it's purely
+     confirming something you already said ("Ack", "Confirmed, thanks",
+     "Sounds good", "Understood"), don't reply to it. That exchange should
+     end with the first acknowledgment. Replying to a reply is how a real
+     production run turned into 20+ paid cycles of two idle handles saying
+     "ack" back and forth to each other, forever — the fix isn't a longer
+     reply, it's no reply. This applies to Owner too: answer real
+     questions from them, don't get pulled into back-and-forth
+     pleasantries just because they're the human.
+   - Never send both `report_status` and `send_message` for the same
+     single update — pick one.
 
 2. **Check the backlog** — `list_tasks(project_id, status="backlog")` or
    similar, for this project.

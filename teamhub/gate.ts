@@ -2,14 +2,40 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "./db.js";
 import { listTasks } from "./tasks.js";
-import { listTeam } from "./members.js";
+import { listTeam, getMember } from "./members.js";
 import type { Role } from "./members.js";
 
 // Pure DB reads only — no Claude call, no tokens spent. Called directly over
 // MCP by the headless runner's idle gate (see agents/runner.ts) before it
 // decides whether a real `claude -p` cycle is worth spawning at all.
 
+// A handle that has explicitly reported itself blocked, and has no active
+// task, isn't waiting on anything a new `claude -p` cycle could act on —
+// only real work (a new task_assignment) or a deliberate redirect (an
+// interrupt) can actually change its situation. Treating every unread
+// `message`/`status_update` as reason enough to wake it was exactly how a
+// real session got stuck: two idle handles exchanging "ack, standing by" /
+// "ack, thanks" forever, each reply itself a new unread message that woke
+// the other side right back — 22+ paid cycles and 14M+ cache-read tokens
+// spent doing nothing but acknowledging acknowledgments. This is the
+// deterministic half of the fix (see also cyclePrompt in agents/runner.ts,
+// which stops new ack-only replies from being generated in the first
+// place) — it caps the damage even if a reply slips through anyway.
+function isBlockedAndIdle(handle: string): boolean {
+  const member = getMember(handle);
+  return member?.status === "blocked" && !hasOwnActiveWork(handle);
+}
+
 export function hasUnreadMessages(handle: string): boolean {
+  if (isBlockedAndIdle(handle)) {
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) as n FROM messages
+         WHERE to_handle = ? AND read = 0 AND type IN ('task_assignment', 'interrupt')`
+      )
+      .get(handle) as { n: number };
+    return row.n > 0;
+  }
   const row = db
     .prepare(`SELECT COUNT(*) as n FROM messages WHERE to_handle = ? AND read = 0`)
     .get(handle) as { n: number };
