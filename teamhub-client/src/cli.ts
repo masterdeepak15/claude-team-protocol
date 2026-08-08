@@ -212,6 +212,57 @@ async function installCommand(flags: Flags): Promise<void> {
   );
 }
 
+export function installedVersion(): string {
+  try {
+    const raw = readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8");
+    return JSON.parse(raw).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+// Same numeric x.y.z comparison as the server package's copy — see
+// cli/teamhub-cli.ts (the server package) for the full rationale.
+export function isNewerVersion(current: string, latest: string): boolean {
+  const a = current.split(".").map(Number);
+  const b = latest.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (y > x) return true;
+    if (y < x) return false;
+  }
+  return false;
+}
+
+async function fetchLatestVersion(packageName: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${packageName}/latest`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as { version?: string };
+    return data.version;
+  } catch {
+    return undefined;
+  }
+}
+
+// teamhub-client has no `upgrade` subcommand of its own (unlike the server
+// package, it isn't managing a running process to stop/restart) — so the
+// update instruction here is the plain npm command directly, not a
+// wrapper. Same fire-and-forget contract as the server package's copy:
+// never blocks or fails `agent` over a version check.
+export async function warnIfUpdateAvailable(packageName: string): Promise<void> {
+  const current = installedVersion();
+  const latest = await fetchLatestVersion(packageName);
+  if (!latest || !isNewerVersion(current, latest)) return;
+  console.log("");
+  console.log(`⚠ A newer version of ${packageName} is available: ${current} → ${latest}`);
+  console.log(`  Run \`npm install -g ${packageName}@latest\` to update.`);
+  console.log("");
+}
+
 export async function main(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
   const flags = parseFlags(rest);
@@ -227,6 +278,7 @@ export async function main(argv: string[]): Promise<void> {
       await installCommand(flags);
       break;
     case "agent":
+      await warnIfUpdateAvailable("@masterdeepak15/teamhub-client");
       if (!process.env.TEAMHUB_TOKEN) {
         const config = readConfig();
         if (config?.token) process.env.TEAMHUB_TOKEN = config.token;

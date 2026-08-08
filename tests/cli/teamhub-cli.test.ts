@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   isProcessAlive,
   tailLines,
@@ -10,6 +10,8 @@ import {
   buildSystemdUnit,
   parseMeta,
   helpText,
+  isNewerVersion,
+  warnIfUpdateAvailable,
 } from "../../cli/teamhub-cli.js";
 
 describe("isProcessAlive", () => {
@@ -156,5 +158,77 @@ describe("helpText", () => {
     for (const cmd of ["install", "start", "stop", "status", "logs", "agent", "token", "upgrade", "uninstall", "help"]) {
       expect(text).toContain(cmd);
     }
+  });
+});
+
+describe("isNewerVersion", () => {
+  it("is true when the latest version is strictly greater", () => {
+    expect(isNewerVersion("2.1.5", "2.1.6")).toBe(true);
+    expect(isNewerVersion("2.1.9", "2.2.0")).toBe(true);
+    expect(isNewerVersion("1.9.9", "2.0.0")).toBe(true);
+  });
+
+  it("is false when equal or the 'latest' is actually older/same (never warn to downgrade)", () => {
+    expect(isNewerVersion("2.1.6", "2.1.6")).toBe(false);
+    expect(isNewerVersion("2.1.6", "2.1.5")).toBe(false);
+    expect(isNewerVersion("2.2.0", "2.1.9")).toBe(false);
+  });
+
+  it("handles differing segment counts without throwing", () => {
+    expect(isNewerVersion("2.1", "2.1.1")).toBe(true);
+    expect(isNewerVersion("2.1.0", "2.1")).toBe(false);
+  });
+});
+
+describe("warnIfUpdateAvailable", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("prints a warning with both versions and the update command when a newer version exists", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ version: "99.0.0" }) })
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await warnIfUpdateAvailable("@masterdeepak15/teamhub-cli");
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toMatch(/newer version/i);
+    expect(output).toContain("99.0.0");
+    expect(output).toMatch(/teamhub upgrade/);
+    logSpy.mockRestore();
+  });
+
+  it("prints nothing when already on the latest version", async () => {
+    // Simulate "already up to date" by having the registry report the
+    // exact same version this test process is running as installed.
+    const { installedVersion } = await import("../../cli/teamhub-cli.js");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ version: installedVersion() }) })
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await warnIfUpdateAvailable("@masterdeepak15/teamhub-cli");
+    expect(logSpy).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+
+  it("fails silently — prints nothing and never throws — when the registry is unreachable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("network down"))
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await expect(warnIfUpdateAvailable("@masterdeepak15/teamhub-cli")).resolves.toBeUndefined();
+    expect(logSpy).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+
+  it("fails silently on a non-ok HTTP response too", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }));
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await warnIfUpdateAvailable("@masterdeepak15/teamhub-cli");
+    expect(logSpy).not.toHaveBeenCalled();
+    logSpy.mockRestore();
   });
 });

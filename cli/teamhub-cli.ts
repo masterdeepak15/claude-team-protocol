@@ -419,6 +419,67 @@ async function waitForExit(pid: number, timeoutMs: number): Promise<void> {
   await sleep(300);
 }
 
+// ---------------------------------------------------------------------------
+// Update check
+// ---------------------------------------------------------------------------
+
+export function installedVersion(): string {
+  try {
+    const raw = readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8");
+    return JSON.parse(raw).version ?? "0.0.0";
+  } catch {
+    return "0.0.0"; // shouldn't happen (this file ships inside the package), but never let it crash the CLI
+  }
+}
+
+// Plain numeric x.y.z comparison — every version this project has ever
+// published fits that shape, so a full semver library isn't worth the
+// dependency. Returns true if `latest` is strictly newer than `current`.
+export function isNewerVersion(current: string, latest: string): boolean {
+  const a = current.split(".").map(Number);
+  const b = latest.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (y > x) return true;
+    if (y < x) return false;
+  }
+  return false;
+}
+
+// Talks to the npm registry directly (not `npm view`, which is slower to
+// spawn and shells out) — a single small GET, 2s timeout, and any failure
+// at all (offline, npm down, DNS) is swallowed silently. This must never
+// be the reason a command hangs or fails when the person is just trying
+// to start their server or their agent.
+async function fetchLatestVersion(packageName: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${packageName}/latest`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as { version?: string };
+    return data.version;
+  } catch {
+    return undefined;
+  }
+}
+
+// Called at the top of the two long-running commands (`start` the server,
+// `agent` the runner) on both this package and its teamhub-client sibling
+// — "both sides" of a real TeamHub setup. Fire-and-forget from the
+// caller's point of view: worst case it silently finds nothing and prints
+// nothing, never blocks or fails the actual command over a version check.
+export async function warnIfUpdateAvailable(packageName: string): Promise<void> {
+  const current = installedVersion();
+  const latest = await fetchLatestVersion(packageName);
+  if (!latest || !isNewerVersion(current, latest)) return;
+  console.log("");
+  console.log(`⚠ A newer version of ${packageName} is available: ${current} → ${latest}`);
+  console.log(`  Run \`teamhub upgrade\` to update (stops the server if running, reinstalls, restarts it).`);
+  console.log("");
+}
+
 async function upgradeTeamhub(explicitPort: number | undefined, explicitDb: string | undefined): Promise<void> {
   const meta = readMeta();
   const port = explicitPort ?? meta.port;
@@ -617,6 +678,7 @@ export async function main(argv: string[]): Promise<void> {
       await runInstall(flags);
       break;
     case "start":
+      await warnIfUpdateAvailable("@masterdeepak15/teamhub-cli");
       startServer(Number(flags.port ?? 8787), typeof flags.db === "string" ? flags.db : undefined);
       break;
     case "stop":
@@ -646,6 +708,7 @@ export async function main(argv: string[]): Promise<void> {
       );
       break;
     case "agent": {
+      await warnIfUpdateAvailable("@masterdeepak15/teamhub-cli");
       const runnerPath = join(PACKAGE_ROOT, "dist", "agents", "runner.js");
       const { main: runAgent } = await import(pathToFileURL(runnerPath).href);
       await runAgent(rest);

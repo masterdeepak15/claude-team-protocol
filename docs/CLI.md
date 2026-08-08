@@ -90,6 +90,7 @@ Starts the TeamHub server as a detached background process.
 - `--db` (default: a file next to the installed package) — path to the SQLite file. Pass the same value every time you start it, or it'll create a fresh empty database.
 - Records the pid to `~/.teamhub/teamhub.pid`, logs to `~/.teamhub/teamhub.log`, and remembers the port/db used in `~/.teamhub/teamhub.meta.json` (read by `upgrade` so it can restart with the same settings automatically).
 - If TeamHub is already running, prints its existing pid and does nothing else.
+- Checks the npm registry for a newer `@masterdeepak15/teamhub-cli` before starting (a single 2s-timeout request; fails silently offline) and prints a one-line warning with the `teamhub upgrade` command if one exists. Never blocks or fails the start over this.
 
 ---
 
@@ -138,7 +139,12 @@ teamhub agent --role <master|developer|tester|analyst> --project <id> --handle <
 ```
 
 Runs a **headless, unattended** loop for one of the four roles — no repo
-checkout needed, works directly from the globally-installed CLI.
+checkout needed, works directly from the globally-installed CLI. Like
+`start`, checks for a newer version before running and prints a
+one-line warning (never blocking) if one's available — on
+`teamhub-client`, the developer/tester-side package, this prints the
+plain `npm install -g @masterdeepak15/teamhub-client@latest` command
+instead, since that package has no `upgrade` subcommand of its own.
 
 **Auth:** every call this makes to TeamHub is authenticated with the same
 shared token `teamhub token` prints (same token the dashboard login and
